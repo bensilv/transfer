@@ -1,0 +1,14 @@
+{
+  "name": "transit-app",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm --prefix apps/server run dev\" \"npm --prefix apps/web run dev\"",
+    "dev:server": "npm --prefix apps/server run dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/server run build && npm --prefix apps/web run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

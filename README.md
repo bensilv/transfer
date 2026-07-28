@@ -23,3 +23,22 @@ The design medium is **HTML/CSS/JS** — these are prototypes, not production co
 - `README.md` — this file
 - `chats/` — conversation transcripts (read these!)
 - `project/` — the `Transit app UX mockup` project files (HTML prototypes, assets, components)
+
+## Implementation
+
+The mockup above has been implemented as a real app in `apps/`:
+
+- `apps/server` — Express/TypeScript backend: real MTA GTFS-RT integration
+  (`DATA_SOURCE=mta`) plus a deterministic mock mode (`DATA_SOURCE=mock`,
+  the default) for development without network access to MTA's servers.
+- `apps/web` — React/Vite mobile-responsive frontend implementing Screen 1
+  (map + bottom sheet) and Screen 2 (journey/transfer view) from the mockup.
+
+See each app's README for setup. From the repo root, `npm install && npm run
+dev` starts both together for local development.
+
+## Deployment (Vercel)
+
+`vercel.json` at the repo root deploys both apps as one Vercel project: the
+frontend as a static build, the backend as a Node serverless function under
+`/api/*`. See `DEPLOY.md` for setup steps.

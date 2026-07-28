@@ -1,0 +1,27 @@
+import type { ActiveTrip, JourneyResponse, NearbyResponse } from './types';
+
+// In production (the Vercel build), the API is served from the same origin
+// as the static site (see vercel.json), so relative /api/* paths just work.
+// Locally, the frontend and backend run as two separate dev servers.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:8787');
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+export function fetchNearby(direction: 'downtown' | 'uptown'): Promise<NearbyResponse> {
+  return getJson(`/api/stations/nearby?direction=${direction}`);
+}
+
+export function fetchJourney(trip: ActiveTrip): Promise<JourneyResponse> {
+  const params = new URLSearchParams({
+    tripId: trip.tripId,
+    line: trip.line,
+    direction: trip.direction,
+    boardedStationId: trip.boardedStationId,
+    boardedArrivalMs: String(trip.boardedArrivalMs),
+  });
+  return getJson(`/api/journey?${params.toString()}`);
+}

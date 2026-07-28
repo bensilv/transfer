@@ -1,0 +1,53 @@
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #eceae6;
+  font-family: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+a { color: #0039A6; }
+a:hover { color: #00287a; }
+
+button { font-family: inherit; }
+
+[data-noscroll] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+[data-noscroll]::-webkit-scrollbar {
+  display: none;
+}
+
+/* Leaflet tooltip reset -> plain dark label pill, matching the design's station-name flag */
+.station-label-tooltip.leaflet-tooltip {
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: none;
+  box-shadow: none;
+  white-space: nowrap;
+}
+.station-label-tooltip.leaflet-tooltip::before {
+  display: none;
+}
+
+.leaflet-container {
+  font-family: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+}
