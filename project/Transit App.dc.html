@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+body{margin:0;background:#eceae6}
+a{color:#0039A6}
+a:hover{color:#00287a}
+[data-noscroll]{scrollbar-width:none;-ms-overflow-style:none;}
+[data-noscroll]::-webkit-scrollbar{display:none;}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 24px;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;box-sizing:border-box;">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402,874">
+<div style="position:relative;height:100%;width:100%;overflow:hidden;background:#ffffff;">
+
+<sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+<div style="position:absolute;inset:0;">
+<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg, #dce6da 0px, #dce6da 26px, #d3ddd1 26px, #d3ddd1 52px);overflow:hidden;">
+<div style="position:absolute;left:50%;top:50%;width:16px;height:16px;border-radius:50%;background:#0b6efd;border:3px solid #fff;box-shadow:0 0 0 5px rgba(11,110,253,0.25);transform:translate(-50%,-50%);"></div>
+<sc-for list="{{homeStations}}" as="st" hint-placeholder-count="5">
+<button onClick="{{ st.onFocus }}" style="position:absolute;left:{{st.x}}%;top:{{st.y}}%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:{{st.primaryColor}};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.28);cursor:pointer;padding:0;"></button>
+<sc-if value="{{st.isFocused}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:{{st.x}}%;top:calc({{st.y}}% - 24px);transform:translate(-50%,-100%);background:#1a1a1a;color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;">{{st.name}}</div>
+</sc-if>
+</sc-for>
+</div>
+
+<sc-if value="{{screen1IsA}}" hint-placeholder-val="{{true}}">
+<div style="position:absolute;left:0;right:0;bottom:0;height:60%;background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,0.14);display:flex;flex-direction:column;">
+<div style="width:36px;height:5px;border-radius:3px;background:#d0d0d5;margin:10px auto 4px;flex-shrink:0;"></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;flex-shrink:0;">
+<span style="font-size:12px;font-weight:800;color:#8a8a90;text-transform:uppercase;letter-spacing:0.6px;">Nearby Stations</span>
+<div style="display:flex;background:#f1f1f3;border-radius:10px;padding:2px;">
+<button onClick="{{setDowntown}}" style="padding:6px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;background:{{dirDowntownBg}};color:{{dirDowntownColor}};cursor:pointer;">Downtown</button>
+<button onClick="{{setUptown}}" style="padding:6px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;background:{{dirUptownBg}};color:{{dirUptownColor}};cursor:pointer;">Uptown</button>
+</div>
+</div>
+<div style="flex:1;overflow:auto;padding:0 12px 16px;">
+<sc-for list="{{homeStations}}" as="st" hint-placeholder-count="5">
+<div style="border-bottom:1px solid #eee;">
+<button onClick="{{st.onFocus}}" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 8px;background:none;border:none;text-align:left;cursor:pointer;">
+<span style="font-size:16px;font-weight:700;color:#1a1a1a;">{{st.name}}</span>
+<span style="display:flex;gap:5px;">
+<sc-for list="{{st.lines}}" as="ln" hint-placeholder-count="3">
+<span style="width:22px;height:22px;border-radius:50%;background:{{ln.color}};color:{{ln.textColor}};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{ln.line}}</span>
+</sc-for>
+</span>
+</button>
+<sc-if value="{{st.isExpanded}}" hint-placeholder-val="{{false}}">
+<div style="padding:0 8px 12px;display:flex;flex-direction:column;gap:12px;">
+<sc-for list="{{st.lines}}" as="ln" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:10px;">
+<span style="width:26px;height:26px;border-radius:50%;background:{{ln.color}};color:{{ln.textColor}};font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{ln.line}}</span>
+<div data-noscroll="true" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;flex:1;min-width:0;">
+<sc-for list="{{ln.arrivals}}" as="a" hint-placeholder-count="3">
+<button onClick="{{a.onTap}}" style="font-size:16px;font-weight:800;padding:7px 13px;border-radius:9px;background:#eef1ff;color:{{a.textColorStyle}};font-style:{{a.fontStyleVal}};border:none;white-space:nowrap;cursor:pointer;flex-shrink:0;">{{a.label}}</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{screen1IsB}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,0.14);display:flex;flex-direction:column;max-height:78%;">
+<div style="width:36px;height:5px;border-radius:3px;background:#d0d0d5;margin:10px auto 4px;flex-shrink:0;"></div>
+<sc-for list="{{homeStations}}" as="st" hint-placeholder-count="5">
+<sc-if value="{{st.isFocused}}" hint-placeholder-val="{{false}}">
+<div style="padding:2px 18px 12px;flex:1;overflow:auto;">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+<div style="font-size:19px;font-weight:800;color:#1a1a1a;">{{st.name}}</div>
+<div style="display:flex;background:#f1f1f3;border-radius:10px;padding:2px;">
+<button onClick="{{setDowntown}}" style="padding:6px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;background:{{dirDowntownBg}};color:{{dirDowntownColor}};cursor:pointer;">Downtown</button>
+<button onClick="{{setUptown}}" style="padding:6px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;background:{{dirUptownBg}};color:{{dirUptownColor}};cursor:pointer;">Uptown</button>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;">
+<sc-for list="{{st.lines}}" as="ln" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:10px;">
+<span style="width:26px;height:26px;border-radius:50%;background:{{ln.color}};color:{{ln.textColor}};font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{ln.line}}</span>
+<div data-noscroll="true" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;flex:1;min-width:0;">
+<sc-for list="{{ln.arrivals}}" as="a" hint-placeholder-count="3">
+<button onClick="{{a.onTap}}" style="font-size:16px;font-weight:800;padding:7px 13px;border-radius:9px;background:#eef1ff;color:{{a.textColorStyle}};font-style:{{a.fontStyleVal}};border:none;white-space:nowrap;cursor:pointer;flex-shrink:0;">{{a.label}}</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</sc-for>
+<div style="display:flex;gap:10px;overflow-x:auto;padding:10px 16px 16px;border-top:1px solid #eee;flex-shrink:0;">
+<sc-for list="{{homeStations}}" as="st" hint-placeholder-count="5">
+<button onClick="{{st.onFocus}}" style="flex-shrink:0;min-width:150px;padding:12px;border-radius:14px;background:#f5f5f7;border:2px solid {{st.cardBorder}};text-align:left;cursor:pointer;">
+<div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">{{st.name}}</div>
+<div style="display:flex;gap:4px;">
+<sc-for list="{{st.lines}}" as="ln" hint-placeholder-count="3">
+<span style="width:20px;height:20px;border-radius:50%;background:{{ln.color}};color:{{ln.textColor}};font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{ln.line}}</span>
+</sc-for>
+</div>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isJourney}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;inset:0;">
+<div style="position:absolute;top:0;left:0;right:0;background:#fff;border-bottom:1px solid #eee;padding-top:54px;z-index:2;">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px;">
+<sc-if value="{{isPreviewing}}" hint-placeholder-val="{{false}}">
+<button onClick="{{cancelPreview}}" style="width:32px;height:32px;border-radius:50%;background:#f1f1f3;border:none;font-size:16px;font-weight:700;color:#555;cursor:pointer;">‹</button>
+</sc-if>
+<sc-if value="{{isNotPreviewing}}" hint-placeholder-val="{{true}}">
+<button onClick="{{goHome}}" style="width:32px;height:32px;border-radius:50%;background:#f1f1f3;border:none;font-size:15px;font-weight:700;color:#555;cursor:pointer;">✕</button>
+</sc-if>
+<div style="display:flex;align-items:center;gap:8px;">
+<span style="width:28px;height:28px;border-radius:50%;background:{{displayLineColor}};color:{{displayLineTextColor}};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{displayLine}}</span>
+<span style="font-size:15px;font-weight:700;color:#1a1a1a;">{{displayDirectionLabel}}</span>
+</div>
+<div style="width:32px;"></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;padding:0 16px 10px;">
+<span style="width:8px;height:8px;border-radius:50%;background:{{statusDotColor}};flex-shrink:0;"></span>
+<span style="font-size:12px;font-weight:700;color:#6b6b70;">{{statusLabel}}</span>
+<span style="font-size:12px;color:#9a9aa0;">· {{lastUpdatedLabel}}</span>
+<button onClick="{{onRefresh}}" style="margin-left:auto;width:26px;height:26px;border-radius:50%;background:#f1f1f3;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+<sc-if value="{{isRefreshing}}" hint-placeholder-val="{{false}}"><span style="font-size:14px;color:#555;display:inline-block;animation:spin 0.6s linear;">↻</span></sc-if>
+<sc-if value="{{isNotRefreshing}}" hint-placeholder-val="{{true}}"><span style="font-size:14px;color:#555;display:inline-block;">↻</span></sc-if>
+</button>
+</div>
+<div style="padding:0 16px 8px;">
+<span style="font-size:11px;font-style:italic;color:#b0b0b6;">Transfer times reflect each connecting line's arrival after your train reaches that stop — not from right now.</span>
+</div>
+</div>
+
+<div style="position:absolute;inset:0;padding-top:130px;padding-bottom:{{bodyBottomPad}};overflow:auto;box-sizing:border-box;">
+
+<sc-if value="{{screen2IsA}}" hint-placeholder-val="{{true}}">
+<div style="padding:16px 16px 24px;">
+<sc-for list="{{journeyStops}}" as="sp" hint-placeholder-count="4">
+<div style="display:flex;gap:12px;">
+<div style="display:flex;flex-direction:column;align-items:center;width:14px;flex-shrink:0;">
+<span style="width:12px;height:12px;border-radius:50%;background:{{displayLineColor}};border:2px solid #fff;box-shadow:0 0 0 2px #ddd;margin-top:4px;flex-shrink:0;"></span>
+<div style="flex:1;width:2px;background:#e2e2e6;display:{{sp.connectorDisplay}};"></div>
+</div>
+<div style="flex:1;padding-bottom:22px;">
+<div style="font-size:15px;font-weight:700;color:#1a1a1a;">{{sp.name}}</div>
+<div style="font-size:12px;font-weight:600;color:#8a8a90;margin-bottom:8px;">{{sp.etaLabel}}</div>
+<sc-if value="{{sp.hasTransfers}}" hint-placeholder-val="{{true}}">
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+<sc-for list="{{sp.transfers}}" as="tr" hint-placeholder-count="2">
+<button onClick="{{tr.onTap}}" style="display:flex;align-items:center;gap:6px;padding:6px 10px 6px 6px;border-radius:20px;background:#f5f5f7;border:none;cursor:pointer;">
+<span style="width:22px;height:22px;border-radius:50%;background:{{tr.color}};color:{{tr.textColor}};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{tr.line}}</span>
+<span style="font-size:13px;font-weight:800;color:{{tr.labelColor}};font-style:{{tr.labelStyle}};">{{tr.label}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{sp.noTransfers}}" hint-placeholder-val="{{false}}">
+<div style="font-size:12px;color:#9a9aa0;">No further connections — end of line</div>
+</sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{screen2IsB}}" hint-placeholder-val="{{false}}">
+<div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+<sc-for list="{{journeyStops}}" as="sp" hint-placeholder-count="4">
+<div style="background:#f9f9fa;border-radius:14px;padding:14px;">
+<div style="font-size:15px;font-weight:700;color:#1a1a1a;">{{sp.name}}</div>
+<div style="font-size:12px;font-weight:600;color:#8a8a90;margin-bottom:10px;">{{sp.etaLabel}}</div>
+<sc-if value="{{sp.hasTransfers}}" hint-placeholder-val="{{true}}">
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+<sc-for list="{{sp.transfers}}" as="tr" hint-placeholder-count="2">
+<button onClick="{{tr.onTap}}" style="display:flex;align-items:center;gap:6px;padding:6px 10px 6px 6px;border-radius:20px;background:#fff;border:none;cursor:pointer;">
+<span style="width:22px;height:22px;border-radius:50%;background:{{tr.color}};color:{{tr.textColor}};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{tr.line}}</span>
+<span style="font-size:13px;font-weight:800;color:{{tr.labelColor}};font-style:{{tr.labelStyle}};">{{tr.label}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{sp.noTransfers}}" hint-placeholder-val="{{false}}">
+<div style="font-size:12px;color:#9a9aa0;">No further connections — end of line</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{screen2IsC}}" hint-placeholder-val="{{false}}">
+<div style="padding:16px;">
+<sc-for list="{{journeyStops}}" as="sp" hint-placeholder-count="4">
+<sc-if value="{{sp.isFocus}}" hint-placeholder-val="{{true}}">
+<div style="background:{{displayLineColor}};border-radius:18px;padding:20px;margin-bottom:16px;">
+<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.75);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Next Stop</div>
+<div style="font-size:20px;font-weight:800;color:#fff;">{{sp.name}}</div>
+<div style="font-size:12px;font-weight:600;color:rgba(255,255,255,0.75);margin-bottom:14px;">{{sp.etaLabel}}</div>
+<sc-if value="{{sp.hasTransfers}}" hint-placeholder-val="{{true}}">
+<div style="display:flex;gap:10px;flex-wrap:wrap;">
+<sc-for list="{{sp.transfers}}" as="tr" hint-placeholder-count="2">
+<button onClick="{{tr.onTap}}" style="display:flex;align-items:center;gap:8px;padding:10px 16px 10px 8px;border-radius:24px;background:rgba(255,255,255,0.16);border:none;cursor:pointer;">
+<span style="width:26px;height:26px;border-radius:50%;background:{{tr.color}};color:{{tr.textColor}};font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{tr.line}}</span>
+<span style="font-size:15px;font-weight:800;color:#fff;font-style:{{tr.labelStyle}};">{{tr.label}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{sp.noTransfers}}" hint-placeholder-val="{{false}}">
+<div style="font-size:13px;color:rgba(255,255,255,0.75);">No further connections — end of line</div>
+</sc-if>
+</div>
+</sc-if>
+</sc-for>
+<div style="display:flex;flex-direction:column;gap:2px;">
+<sc-for list="{{journeyStops}}" as="sp" hint-placeholder-count="4">
+<sc-if value="{{sp.isNotFocus}}" hint-placeholder-val="{{false}}">
+<button onClick="{{sp.onFocus}}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 8px;background:none;border:none;border-bottom:1px solid #eee;text-align:left;cursor:pointer;">
+<span style="font-size:14px;font-weight:600;color:#1a1a1a;">{{sp.name}}</span>
+<span style="display:flex;gap:4px;">
+<sc-for list="{{sp.transfers}}" as="tr" hint-placeholder-count="2">
+<span style="width:20px;height:20px;border-radius:50%;background:{{tr.color}};color:{{tr.textColor}};font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{tr.line}}</span>
+</sc-for>
+</span>
+</button>
+</sc-if>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+</div>
+
+<sc-if value="{{isPreviewing}}" hint-placeholder-val="{{false}}">
+<button onClick="{{confirmPreview}}" style="position:absolute;right:16px;bottom:24px;padding:13px 20px;border-radius:26px;background:#0039A6;color:#fff;border:none;font-size:14px;font-weight:800;box-shadow:0 8px 20px rgba(0,0,0,0.3);cursor:pointer;z-index:5;">Transfer →</button>
+</sc-if>
+
+</div>
+</sc-if>
+
+</div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:480,&quot;height&quot;:940},&quot;screen1Variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;B&quot;,&quot;options&quot;:[&quot;A&quot;,&quot;B&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Screen 1 layout&quot;},&quot;screen2Variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;A&quot;,&quot;options&quot;:[&quot;A&quot;,&quot;B&quot;,&quot;C&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Screen 2 layout&quot;},&quot;simulateOffline&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;}}">
+const LINE_COLORS = {
+  '1':'#EE352E','2':'#EE352E','3':'#EE352E',
+  '4':'#00933C','5':'#00933C','6':'#00933C',
+  '7':'#B933AD',
+  'A':'#0039A6','C':'#0039A6','E':'#0039A6',
+  'B':'#FF6319','D':'#FF6319','F':'#FF6319','M':'#FF6319',
+  'G':'#6CBE45',
+  'J':'#996633','Z':'#996633',
+  'L':'#A7A9AC',
+  'N':'#FCCC0A','Q':'#FCCC0A','R':'#FCCC0A','W':'#FCCC0A',
+  'S':'#808183'
+};
+const LIGHT_TEXT_LINES = ['N','Q','R','W','L'];
+function textColorFor(line){ return LIGHT_TEXT_LINES.includes(line) ? '#1a1a1a' : '#fff'; }
+
+const STATIONS = [
+  { id:'14st8av', name:'14 St - 8 Av', x:35, y:58, lines:{
+    A:{downtown:[3,14,26,38,50],uptown:[6,19,31,43,55]}, C:{downtown:[7,22,34,46,58],uptown:[10,25,37,49,61]},
+    E:{downtown:[5,16,28,40,52],uptown:[9,20,33,45,57]}, L:{downtown:[4,12,21,33,45],uptown:[8,17,29,41,53]} } },
+  { id:'w4st', name:'W 4 St - Wash Sq', x:50, y:45, lines:{
+    A:{downtown:[2,13,25,37,49],uptown:[9,21,32,44,56]}, C:{downtown:[6,18,30,42,54],uptown:[11,23,35,47,59]},
+    F:{downtown:[3,15,27,39,51],uptown:[7,20,31,43,55]}, M:{downtown:[9,22,34,46,58],uptown:[13,27,39,51,63]} } },
+  { id:'union14', name:'Union Sq - 14 St', x:60, y:30, lines:{
+    '4':{downtown:[4,16,28,40,52],uptown:[6,18,29,41,53]}, '6':{downtown:[2,9,17,26,35],uptown:[3,10,19,28,37]},
+    L:{downtown:[5,13,22,34,46],uptown:[8,17,26,38,50]}, N:{downtown:[6,17,29,41,53],uptown:[10,22,33,45,57]} } },
+  { id:'chambers', name:'Chambers St', x:40, y:78, lines:{
+    A:{downtown:[5,19,31,43,55],uptown:[8,22,34,46,58]}, C:{downtown:[9,24,36,48,60],uptown:[12,27,38,50,62]},
+    '2':{downtown:[4,15,26,38,50],uptown:[7,18,29,41,53]}, '3':{downtown:[10,25,37,49,61],uptown:[13,28,40,52,64]} } },
+  { id:'canal', name:'Canal St', x:55, y:70, lines:{
+    '6':{downtown:[3,12,20,29,38],uptown:[5,14,23,32,41]}, J:{downtown:[8,20,32,44,56],uptown:[11,23,35,47,59]},
+    N:{downtown:[6,18,30,42,54],uptown:[9,21,33,45,57]}, Q:{downtown:[2,11,19,28,37],uptown:[4,13,21,30,39]} } }
+];
+
+const CURATED = {
+  'C_downtown': [
+    { name:'14 St - 8 Av', etaMin:2, transfers:[ {line:'L', mins:5} ] },
+    { name:'W 4 St - Wash Sq', etaMin:5, transfers:[ {line:'A', mins:2}, {line:'F', mins:3} ] },
+    { name:'Spring St', etaMin:8, transfers:[] },
+    { name:'Canal St', etaMin:11, transfers:[ {line:'J', mins:6, noData:true}, {line:'6', mins:9} ] },
+    { name:'Chambers St', etaMin:15, transfers:[] }
+  ],
+  'A_downtown': [
+    { name:'W 4 St - Wash Sq', etaMin:2, transfers:[ {line:'C', mins:1}, {line:'F', mins:4, noData:true} ] },
+    { name:'Spring St', etaMin:6, transfers:[] },
+    { name:'Chambers St', etaMin:9, transfers:[ {line:'2', mins:3}, {line:'3', mins:8} ] },
+    { name:'Fulton St', etaMin:13, transfers:[ {line:'4', mins:2}, {line:'5', mins:6}, {line:'J', mins:11} ] },
+    { name:'High St', etaMin:17, transfers:[] }
+  ],
+  'L_downtown': [
+    { name:'6 Av - 14 St', etaMin:2, transfers:[ {line:'F', mins:3}, {line:'M', mins:9} ] },
+    { name:'1 Av', etaMin:5, transfers:[] },
+    { name:'Bedford Av', etaMin:9, transfers:[] }
+  ]
+};
+
+const GENERIC_STOPS = ['96 St','72 St','42 St','34 St','23 St','14 St','8 St','Canal St','Chambers St','Fulton St','Bowling Green'];
+function generateJourney(line, direction){
+  const seed = line.charCodeAt(0);
+  const stops = direction === 'uptown' ? GENERIC_STOPS.slice(0,5) : GENERIC_STOPS.slice(3,8);
+  const others = Object.keys(LINE_COLORS).filter(l => l !== line);
+  return stops.map((name, i) => {
+    const etaMin = (i + 1) * 3 + (seed % 3);
+    if (i === stops.length - 1) return { name, etaMin, transfers: [] };
+    const l1 = others[(seed + i) % others.length];
+    const l2 = others[(seed + i * 3 + 2) % others.length];
+    const transfers = [{ line: l1, mins: 2 + ((seed + i) % 6) }];
+    if (l2 !== l1) transfers.push({ line: l2, mins: 4 + ((seed + i * 2) % 8), noData: i === 2 });
+    return { name, etaMin, transfers };
+  });
+}
+function formatClock(ts){
+  const d = new Date(ts);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+}
+
+class Component extends DCLogic {
+  state = {
+    screen: 'home',
+    homeFocusId: STATIONS[0].id,
+    homeExpandedId: STATIONS[0].id,
+    homeDirection: 'downtown',
+    activeLine: 'C', activeDirection: 'downtown', activeStops: CURATED['C_downtown'],
+    preview: null,
+    journeyFocusIndex: 0,
+    lastFetchTs: Date.now(),
+    nowTs: Date.now(),
+    isRefreshing: false
+  };
+
+  componentDidMount(){
+    this._timer = setInterval(() => this.setState({ nowTs: Date.now() }), 1000);
+  }
+  componentWillUnmount(){
+    clearInterval(this._timer);
+  }
+
+  buildJourney(line, direction){
+    const key = line + '_' + direction;
+    return CURATED[key] || generateJourney(line, direction);
+  }
+
+  selectArrival = (line, direction, mins) => {
+    this.setState({
+      screen: 'journey', activeLine: line, activeDirection: direction,
+      activeStops: this.buildJourney(line, direction), preview: null,
+      journeyFocusIndex: 0, lastFetchTs: Date.now()
+    });
+  };
+
+  setHomeDirection = (dir) => this.setState({ homeDirection: dir });
+  focusStation = (id) => {
+    this.setState(s => ({ homeFocusId: id, homeExpandedId: s.homeExpandedId === id ? null : id }));
+  };
+  focusStop = (i) => this.setState({ journeyFocusIndex: i });
+
+  previewTransfer = (line) => {
+    const direction = this.state.activeDirection || 'downtown';
+    this.setState({ preview: { line, direction, stops: this.buildJourney(line, direction) } });
+  };
+  cancelPreview = () => this.setState({ preview: null });
+  confirmPreview = () => {
+    const p = this.state.preview;
+    if (!p) return;
+    this.setState({
+      activeLine: p.line, activeDirection: p.direction, activeStops: p.stops,
+      preview: null, journeyFocusIndex: 0, lastFetchTs: Date.now()
+    });
+  };
+  goHome = () => this.setState({ screen: 'home', preview: null });
+  onRefresh = () => {
+    if (this.props.simulateOffline) return;
+    this.setState({ lastFetchTs: Date.now(), isRefreshing: true });
+    setTimeout(() => this.setState({ isRefreshing: false }), 500);
+  };
+
+  renderVals(){
+    const s = this.state;
+    const offline = !!this.props.simulateOffline;
+    const elapsedMin = (s.nowTs - s.lastFetchTs) / 60000;
+    const dispMins = (base) => Math.max(0, base - elapsedMin);
+    const fmtMins = (base) => {
+      const v = dispMins(base);
+      const txt = v < 1 ? 'NOW' : Math.round(v) + ' min';
+      return offline ? '~' + txt : txt;
+    };
+
+    const homeStations = STATIONS.map(st => {
+      const isFocused = (s.homeFocusId || STATIONS[0].id) === st.id;
+      const firstLine = Object.keys(st.lines)[0];
+      const dir = s.homeDirection;
+      const lines = Object.keys(st.lines).map(line => {
+        const arr = st.lines[line][dir];
+        return {
+          key: st.id + '_' + line, line, color: LINE_COLORS[line], textColor: textColorFor(line),
+          arrivals: arr.map((m, idx) => ({
+            key: st.id + '_' + line + '_' + idx, label: fmtMins(m),
+            textColorStyle: offline ? '#9a9aa0' : '#1a1a1a', fontStyleVal: offline ? 'italic' : 'normal',
+            onTap: () => this.selectArrival(line, dir, m)
+          }))
+        };
+      });
+      return {
+        id: st.id, name: st.name, x: st.x, y: st.y,
+        primaryColor: LINE_COLORS[firstLine],
+        isFocused, isExpanded: s.homeExpandedId === st.id,
+        cardBorder: isFocused ? '#0039A6' : 'transparent',
+        lines,
+        onFocus: () => this.focusStation(st.id)
+      };
+    });
+
+    const preview = s.preview;
+    const stops = preview ? preview.stops : (s.activeStops || []);
+    const nowTs = s.nowTs;
+    const journeyStops = stops.map((stop, i) => {
+      const stopTs = s.lastFetchTs + stop.etaMin * 60000;
+      const stopMinsAway = Math.max(0, Math.round((stopTs - nowTs) / 60000));
+      const etaLabel = formatClock(stopTs) + ' · ' + (stopMinsAway < 1 ? 'now' : stopMinsAway + ' min away');
+      const transfers = stop.transfers.map((t, ti) => {
+        const noData = !!t.noData;
+        return {
+          key: i + '_' + ti, line: t.line, color: LINE_COLORS[t.line], textColor: textColorFor(t.line),
+          label: noData ? 'NO DATA' : fmtMins(t.mins),
+          labelColor: noData ? '#b0b0b6' : (offline ? '#9a9aa0' : '#1a1a1a'),
+          labelStyle: (!noData && offline) ? 'italic' : 'normal',
+          onTap: () => { if (!noData) this.previewTransfer(t.line); }
+        };
+      });
+      const isFocus = i === (s.journeyFocusIndex || 0);
+      return {
+        key: i, name: stop.name, etaLabel,
+        hasTransfers: transfers.length > 0, noTransfers: transfers.length === 0,
+        transfers, isFocus, isNotFocus: !isFocus,
+        connectorDisplay: i === stops.length - 1 ? 'none' : 'block',
+        onFocus: () => this.focusStop(i)
+      };
+    });
+
+    const displayLine = preview ? preview.line : s.activeLine;
+    const displayLineColor = LINE_COLORS[displayLine] || '#0039A6';
+    const displayLineTextColor = textColorFor(displayLine);
+    const displayDirection = preview ? preview.direction : s.activeDirection;
+
+    const elapsedSec = (s.nowTs - s.lastFetchTs) / 1000;
+    const lastUpdatedLabel = elapsedSec < 5 ? 'Updated just now'
+      : elapsedSec < 60 ? 'Updated ' + Math.round(elapsedSec) + 's ago'
+      : 'Updated ' + Math.round(elapsedSec / 60) + 'm ago';
+
+    return {
+      isHome: s.screen === 'home', isJourney: s.screen === 'journey',
+      screen1IsA: (this.props.screen1Variant || 'A') === 'A',
+      screen1IsB: (this.props.screen1Variant || 'A') === 'B',
+      screen2IsA: (this.props.screen2Variant || 'A') === 'A',
+      screen2IsB: (this.props.screen2Variant || 'A') === 'B',
+      screen2IsC: (this.props.screen2Variant || 'A') === 'C',
+      homeStations,
+      dirDowntownBg: s.homeDirection === 'downtown' ? '#fff' : 'transparent',
+      dirDowntownColor: s.homeDirection === 'downtown' ? '#1a1a1a' : '#8a8a90',
+      dirUptownBg: s.homeDirection === 'uptown' ? '#fff' : 'transparent',
+      dirUptownColor: s.homeDirection === 'uptown' ? '#1a1a1a' : '#8a8a90',
+      setDowntown: () => this.setHomeDirection('downtown'),
+      setUptown: () => this.setHomeDirection('uptown'),
+      journeyStops,
+      isPreviewing: !!preview, isNotPreviewing: !preview,
+      displayLine, displayLineColor, displayLineTextColor,
+      displayDirectionLabel: displayDirection === 'uptown' ? 'Uptown' : 'Downtown',
+      statusDotColor: offline ? '#e0433d' : '#1a9c53',
+      statusLabel: offline ? 'OFFLINE' : 'LIVE',
+      lastUpdatedLabel,
+      onRefresh: this.onRefresh, isRefreshing: s.isRefreshing, isNotRefreshing: !s.isRefreshing,
+      goHome: this.goHome, cancelPreview: this.cancelPreview, confirmPreview: this.confirmPreview,
+      bodyBottomPad: preview ? '90px' : '24px'
+    };
+  }
+}
+</script>
+</body>
+</html>
