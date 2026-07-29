@@ -284,7 +284,10 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
       [...this.stationByGtfsId.entries()].filter(([, ourId]) => ourId === params.boardedStationId).map(([realId]) => realId),
     );
     const boardedIdx = seq.findIndex((s) => boardedRealIds.has(baseStopId(s.gtfsStopId)));
-    const rest = boardedIdx === -1 ? seq : seq.slice(boardedIdx + 1);
+    // Includes the boarded stop itself, not just what comes after it, so the
+    // rider sees their whole journey (where they got on, where they are now,
+    // where they're going) rather than only the road ahead.
+    const rest = boardedIdx === -1 ? seq : seq.slice(boardedIdx);
 
     // Header label for the boarded/previewed trip itself: its actual next
     // stop from here decides Uptown/Downtown vs. crosstown, its actual final
@@ -325,7 +328,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
           directionLabels,
         };
       });
-      return { stationId, name: station.name, arrivalMs: stop.arrivalMs, transfers };
+      return { stationId, name: station.name, lat: station.lat, lon: station.lon, arrivalMs: stop.arrivalMs, transfers };
     });
 
     return { stops, status: this.statusFrom(failures), directionLabel: headerDirectionLabel };

@@ -92,7 +92,7 @@ router.get('/stations/nearby', async (req, res) => {
 });
 
 // Screen 2 / transfer preview: remaining stops + transfer options for a specific trip,
-// starting right after the stop the rider boarded (or is currently previewing from).
+// starting at the stop the rider boarded (or is currently previewing from).
 router.get('/journey', async (req, res) => {
   const { tripId, line, boardedStationId } = req.query as Record<string, string | undefined>;
   const direction = parseDirection(req.query.direction);
@@ -124,6 +124,8 @@ router.get('/journey', async (req, res) => {
     stops: stops.map((s) => ({
       stationId: s.stationId,
       name: s.name,
+      lat: s.lat,
+      lon: s.lon,
       arrivalMs: s.arrivalMs,
       transfers: s.transfers.map((t) => ({
         line: t.line,

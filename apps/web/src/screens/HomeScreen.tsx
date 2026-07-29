@@ -3,11 +3,21 @@ import { fetchNearby } from '../api';
 import { usePolledData } from '../hooks/usePolledData';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useNowTick } from '../hooks/useNowTick';
+import { useViewportHeight } from '../hooks/useViewportHeight';
 import { formatMinutesAway } from '../format';
 import { haversineMeters } from '../geo';
 import { StationMap } from '../components/StationMap';
+import { BottomSheet, SHEET_HANDLE_HEIGHT_PX } from '../components/BottomSheet';
 import { pickDirectionLabels } from '../directionLabels';
 import type { ActiveTrip, Direction, NearbyStation } from '../types';
+
+// Fraction of the viewport the sheet expands to, capped so it doesn't get
+// absurdly tall on large screens — matches the old fixed-content sheet's
+// rough proportions, just as an explicit drag snap point instead of a
+// content-driven max-height.
+const EXPANDED_SHEET_VH_FRACTION = 0.72;
+const EXPANDED_SHEET_MAX_PX = 620;
+const SHEET_BOTTOM_SAFE_PADDING = 'max(16px, env(safe-area-inset-bottom))';
 
 export function HomeScreen({
   direction,
@@ -24,6 +34,7 @@ export function HomeScreen({
 }) {
   const geo = useGeolocation();
   const now = useNowTick();
+  const viewportHeight = useViewportHeight();
 
   // Wherever the pinned dot on the map currently points — starts at the
   // rider's real GPS fix, but tracks the map as they pan it (see
@@ -68,15 +79,42 @@ export function HomeScreen({
   const focused = stations.find((s) => s.id === activeFocusId) ?? null;
   const { toggle: toggleLabels } = pickDirectionLabels(focused?.lines ?? []);
 
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const [sheetHeightPx, setSheetHeightPx] = useState(0);
+  // Sheet snap points: collapsed shows just the handle and the station strip
+  // (so you can still switch stations with the map full-screen behind it),
+  // expanded shows the full arrivals detail too. Collapsed height is measured
+  // off the actual strip (its content — text length, wrapped line count —
+  // can vary slightly by station), expanded is a fixed proportion of the
+  // viewport since there's no fixed "natural" height once a station has many
+  // lines (the detail panel scrolls internally beyond this cap either way).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripHeightPx, setStripHeightPx] = useState(96);
   useEffect(() => {
-    const el = sheetRef.current;
+    const el = stripRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setSheetHeightPx(entry.contentRect.height));
+    let rafId = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      // rAF defers the setState past the current render cycle — avoids a
+      // "Cannot update HomeScreen while rendering BottomSheet" warning in
+      // React strict-mode caused by the ResizeObserver firing synchronously
+      // during the DOM manipulation of strict-mode's unmount/remount cycle.
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => setStripHeightPx(entry.contentRect.height));
+    });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
+  const collapsedHeight = SHEET_HANDLE_HEIGHT_PX + stripHeightPx;
+  const expandedHeight = Math.max(
+    collapsedHeight,
+    Math.min(viewportHeight * EXPANDED_SHEET_VH_FRACTION, EXPANDED_SHEET_MAX_PX),
+  );
+  const snapPoints = [collapsedHeight, expandedHeight];
+  const [activeSnap, setActiveSnap] = useState(1);
+  const [sheetHeightPx, setSheetHeightPx] = useState(expandedHeight);
+  const expanded = activeSnap === 1;
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -90,26 +128,15 @@ export function HomeScreen({
         onDotLocationSettled={setFetchLocation}
       />
 
-      <div
-        ref={sheetRef}
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 1,
-          background: '#fff',
-          borderRadius: '20px 20px 0 0',
-          boxShadow: '0 -8px 24px rgba(0,0,0,0.14)',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: '78%',
-        }}
+      <BottomSheet
+        snapPoints={snapPoints}
+        activeSnap={activeSnap}
+        onSnapChange={setActiveSnap}
+        onHeightChange={setSheetHeightPx}
+        style={{ background: '#fff', borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 24px rgba(0,0,0,0.14)' }}
       >
-        <div style={{ width: 36, height: 5, borderRadius: 3, background: '#d0d0d5', margin: '10px auto 4px', flexShrink: 0 }} />
-
-        {focused && (
-          <div style={{ padding: '2px 18px 12px', flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {expanded && focused && (
+          <div data-sheet-scroll style={{ padding: '2px 18px 12px', flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 19, fontWeight: 800, color: '#1a1a1a' }}>{focused.name}</div>
               <div style={{ display: 'flex', background: '#f1f1f3', borderRadius: 10, padding: 2 }}>
@@ -183,7 +210,15 @@ export function HomeScreen({
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '10px 16px 16px', borderTop: '1px solid #eee', flexShrink: 0 }}>
+        <div
+          ref={stripRef}
+          style={{
+            display: 'flex', gap: 10, overflowX: 'auto',
+            padding: `10px 16px ${SHEET_BOTTOM_SAFE_PADDING}`,
+            borderTop: expanded ? '1px solid #eee' : 'none',
+            flexShrink: 0,
+          }}
+        >
           {stations.map((st) => (
             <button
               key={st.id}
@@ -210,7 +245,7 @@ export function HomeScreen({
             </button>
           ))}
         </div>
-      </div>
+      </BottomSheet>
     </div>
   );
 }

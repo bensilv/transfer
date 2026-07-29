@@ -54,6 +54,8 @@ export interface TransferDto {
 export interface JourneyStopDto {
   stationId: string;
   name: string;
+  lat: number;
+  lon: number;
   arrivalMs: number;
   transfers: TransferDto[];
 }

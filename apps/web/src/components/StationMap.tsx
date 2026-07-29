@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { Circle, GeoJSON, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useLineShapes } from '../hooks/useLineShapes';
 import { LINE_COLORS } from '../lines';
 import type { NearbyStation } from '../types';
+import type { LatLngTuple } from '../routeGeometry';
 
-const DEFAULT_CENTER: [number, number] = [40.7318, -74.0002]; // W 4 St - roughly the middle of our coverage area
+const DEFAULT_CENTER: LatLngTuple = [40.7318, -74.0002]; // W 4 St - roughly the middle of our coverage area
 const RECENTER_ZOOM = 15;
 // Real-world radius (meters) rather than a pixel size, so the dots are actual
 // map features that grow/shrink with zoom instead of fixed-size UI pins.
@@ -23,6 +24,9 @@ const DOT_LOCATION_THROTTLE_MS = 150;
 const LINE_SHAPE_WEIGHT = 3;
 const LINE_SHAPE_OPACITY = 0.75;
 const LINE_SHAPE_FALLBACK_COLOR = '#888';
+const ROUTE_HIGHLIGHT_WEIGHT = 6;
+const ROUTE_HIGHLIGHT_OPACITY = 0.95;
+const PASSED_STOP_COLOR = '#c0c0c6';
 
 function lineShapeStyle(feature?: GeoJSON.Feature): L.PathOptions {
   const route = (feature?.properties?.route as string | undefined) ?? '';
@@ -32,6 +36,15 @@ function lineShapeStyle(feature?: GeoJSON.Feature): L.PathOptions {
     opacity: LINE_SHAPE_OPACITY,
     lineCap: 'round',
   };
+}
+
+function trainDotIcon(color: string): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    html: `<div class="train-dot" style="background:${color}"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
 }
 
 /**
@@ -199,6 +212,63 @@ function CenterUserDot({ obstructedBottomPx }: { obstructedBottomPx: number }) {
   );
 }
 
+/**
+ * Fits the map to `points` once whenever `fitKey` changes (e.g. a new leg is
+ * boarded) — not on every render, since `points` is recomputed each poll and
+ * a re-fit on every poll would fight the rider's own panning/zooming. Reads
+ * `points`/`padBottomPx` through refs precisely so they can be current
+ * without being reactive dependencies themselves.
+ */
+function FitBoundsOnChange({ points, padBottomPx, fitKey }: { points: LatLngTuple[]; padBottomPx: number; fitKey: string }) {
+  const map = useMap();
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
+  const padRef = useRef(padBottomPx);
+  padRef.current = padBottomPx;
+
+  useEffect(() => {
+    const pts = pointsRef.current;
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.setView(pts[0], RECENTER_ZOOM);
+      return;
+    }
+    map.fitBounds(L.latLngBounds(pts), {
+      paddingTopLeft: [36, 60],
+      paddingBottomRight: [36, padRef.current + 36],
+      maxZoom: RECENTER_ZOOM + 1,
+    });
+    // fitKey (not `points`/`padBottomPx`) intentionally drives this: re-fit
+    // once per leg, not once per poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, fitKey]);
+
+  return null;
+}
+
+export interface RouteHighlight {
+  color: string;
+  points: LatLngTuple[];
+}
+
+export type RouteStopStatus = 'passed' | 'active' | 'upcoming';
+
+export interface RouteStopMarker {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  color: string;
+  status: RouteStopStatus;
+  /** e.g. "5 min" — shown as a small callout at the stop while a boarded/selected train hasn't arrived there yet. Null/undefined hides it. */
+  arrivalBadge?: string | null;
+}
+
+export interface TrainMarker {
+  position: LatLngTuple;
+  color: string;
+}
+
 export function StationMap({
   stations,
   focusedId,
@@ -207,24 +277,39 @@ export function StationMap({
   obstructedBottomPx = 0,
   onDotLocationChange,
   onDotLocationSettled,
+  routes,
+  routeStops,
+  trainMarker,
+  fitBounds,
 }: {
-  stations: NearbyStation[];
-  focusedId: string | null;
-  onFocusStation: (id: string) => void;
-  userLocation: { lat: number; lon: number } | null;
+  stations?: NearbyStation[];
+  focusedId?: string | null;
+  onFocusStation?: (id: string) => void;
+  userLocation?: { lat: number; lon: number } | null;
   /** Height (px) of UI overlaying the bottom of the map, e.g. the arrivals sheet. */
   obstructedBottomPx?: number;
   /** Called with the coordinate under the dot whenever the map pans or flies. */
   onDotLocationChange?: (loc: { lat: number; lon: number }) => void;
   /** Called once a pan/fly settles (moveend), not on every intermediate frame — for callers that need to re-fetch rather than just re-sort. */
   onDotLocationSettled?: (loc: { lat: number; lon: number }) => void;
+  /** One highlighted path per journey leg drawn so far, heavier and brighter than the base network overlay. */
+  routes?: RouteHighlight[];
+  /** Stops along the highlighted route(s), styled by whether the train has passed, is at, or hasn't reached them yet. */
+  routeStops?: RouteStopMarker[];
+  /** A single moving dot representing the train's current interpolated position. */
+  trainMarker?: TrainMarker | null;
+  /** Fits the map to these points once per `key` change — e.g. once per boarded leg, not on every poll. */
+  fitBounds?: { points: LatLngTuple[]; key: string };
 }) {
   const dotOffsetPx = obstructedBottomPx / 2;
   const lineShapes = useLineShapes();
+  const initialCenter: LatLngTuple = userLocation
+    ? [userLocation.lat, userLocation.lon]
+    : (fitBounds?.points[0] ?? DEFAULT_CENTER);
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
       <MapContainer
-        center={userLocation ? [userLocation.lat, userLocation.lon] : DEFAULT_CENTER}
+        center={initialCenter}
         zoom={14}
         zoomControl={false}
         attributionControl={true}
@@ -248,7 +333,15 @@ export function StationMap({
             )}
           </>
         )}
-        {stations.map((st) => {
+        {fitBounds && <FitBoundsOnChange points={fitBounds.points} padBottomPx={obstructedBottomPx} fitKey={fitBounds.key} />}
+        {routes?.map((r, i) => (
+          <Polyline
+            key={i}
+            positions={r.points}
+            pathOptions={{ color: r.color, weight: ROUTE_HIGHLIGHT_WEIGHT, opacity: ROUTE_HIGHLIGHT_OPACITY, lineCap: 'round' }}
+          />
+        ))}
+        {stations?.map((st) => {
           const focused = st.id === focusedId;
           return (
             <Circle
@@ -261,7 +354,7 @@ export function StationMap({
                 fillColor: st.lines[0]?.color ?? '#0039A6',
                 fillOpacity: 1,
               }}
-              eventHandlers={{ click: () => onFocusStation(st.id) }}
+              eventHandlers={onFocusStation ? { click: () => onFocusStation(st.id) } : undefined}
             >
               {focused && (
                 <Tooltip permanent direction="top" offset={[0, -12]} className="station-label-tooltip">
@@ -271,6 +364,35 @@ export function StationMap({
             </Circle>
           );
         })}
+        {routeStops?.map((s) => {
+          const passed = s.status === 'passed';
+          const active = s.status === 'active';
+          return (
+            <Circle
+              key={s.id}
+              center={[s.lat, s.lon]}
+              radius={active ? STATION_RADIUS_FOCUSED_M : STATION_RADIUS_M}
+              pathOptions={{
+                color: '#fff',
+                weight: 2,
+                fillColor: passed ? PASSED_STOP_COLOR : s.color,
+                fillOpacity: passed ? 0.7 : 1,
+              }}
+            >
+              {active && (
+                <Tooltip permanent direction="top" offset={[0, -12]} className="station-label-tooltip">
+                  {s.name}
+                </Tooltip>
+              )}
+              {s.arrivalBadge && (
+                <Tooltip permanent direction="right" offset={[12, 0]} className="arrival-badge-tooltip">
+                  {s.arrivalBadge}
+                </Tooltip>
+              )}
+            </Circle>
+          );
+        })}
+        {trainMarker && <Marker position={trainMarker.position} icon={trainDotIcon(trainMarker.color)} />}
       </MapContainer>
       {userLocation && <CenterUserDot obstructedBottomPx={obstructedBottomPx} />}
     </div>

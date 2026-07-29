@@ -48,6 +48,34 @@ button { font-family: inherit; }
   display: none;
 }
 
+/* Small colored callout at a stop, e.g. "5 min" for a train that hasn't arrived there yet. */
+.arrival-badge-tooltip.leaflet-tooltip {
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: none;
+  box-shadow: none;
+  white-space: nowrap;
+}
+.arrival-badge-tooltip.leaflet-tooltip::before {
+  display: none;
+}
+
 .leaflet-container {
   font-family: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+}
+
+@keyframes trainPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,0,0,0.22); }
+  50% { box-shadow: 0 0 0 6px rgba(0,0,0,0.05); }
+}
+.train-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  animation: trainPulse 1.6s ease-in-out infinite;
 }

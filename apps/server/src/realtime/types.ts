@@ -40,6 +40,8 @@ export interface TransferArrival {
 export interface JourneyStop {
   stationId: string;
   name: string;
+  lat: number;
+  lon: number;
   /** Predicted arrival time of the active trip at this stop, epoch ms. */
   arrivalMs: number;
   transfers: TransferArrival[];
@@ -68,8 +70,9 @@ export interface RealtimeProvider {
     stations: Station[],
   ): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }>;
   /**
-   * Remaining-stop journey for a specific trip the user has already boarded,
-   * starting from `boardedStationId`/`boardedArrivalMs` (the arrival they tapped).
+   * Stop-by-stop journey for a specific trip the user has already boarded,
+   * starting *at* `boardedStationId`/`boardedArrivalMs` (the arrival they
+   * tapped) and running to the trip's last stop in the current decode.
    */
   getJourney(params: {
     tripId: string;
