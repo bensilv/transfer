@@ -76,8 +76,10 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
 
   private async ensureStationMapping(): Promise<void> {
     if (this.stationByGtfsId.size > 0) return;
+    // Real GTFS stop_id -> our station id; a station id can appear as the
+    // value for several real stop_ids (see resolveStationGtfsIds).
     const ids = await getStationGtfsIds();
-    for (const [stationId, gtfsId] of Object.entries(ids)) {
+    for (const [gtfsId, stationId] of Object.entries(ids)) {
       this.stationByGtfsId.set(gtfsId, stationId);
     }
   }
@@ -158,6 +160,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     tripId: string;
     line: string;
     direction: Direction;
+    transferDirection: Direction;
     boardedStationId: string;
     boardedArrivalMs: number;
   }): Promise<{ stops: JourneyStop[]; status: ProviderStatus }> {
@@ -171,8 +174,13 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
       return { stops: [], status: this.statusFrom([...failures, `trip ${params.tripId} not present in the current feed`]) };
     }
 
-    const boardedRealId = [...this.stationByGtfsId.entries()].find(([, ourId]) => ourId === params.boardedStationId)?.[0];
-    const boardedIdx = seq.findIndex((s) => baseStopId(s.gtfsStopId) === boardedRealId);
+    // A station id can map to several real stop_ids (e.g. two line groups in
+    // the same complex on separate platforms) — this trip's sequence only
+    // ever contains one of them, so match against whichever one it has.
+    const boardedRealIds = new Set(
+      [...this.stationByGtfsId.entries()].filter(([, ourId]) => ourId === params.boardedStationId).map(([realId]) => realId),
+    );
+    const boardedIdx = seq.findIndex((s) => boardedRealIds.has(baseStopId(s.gtfsStopId)));
     const rest = boardedIdx === -1 ? seq : seq.slice(boardedIdx + 1);
 
     // Figure out which additional feeds we need for connecting lines at the
@@ -195,13 +203,12 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     const stops: JourneyStop[] = knownStops.map(({ stop, stationId }) => {
       const station = STATIONS.find((s) => s.id === stationId)!;
       const transfers = connectingLines(stationId, params.line).map((tLine) => {
-        const both = [
-          ...(this.arrivalsIndex.get(`${stationId}:${tLine}:uptown`) ?? []),
-          ...(this.arrivalsIndex.get(`${stationId}:${tLine}:downtown`) ?? []),
-        ].filter((a) => a.arrivalMs >= stop.arrivalMs);
-        both.sort((a, b) => a.arrivalMs - b.arrivalMs);
-        const best = both[0];
-        return { line: tLine, direction: best?.direction ?? 'downtown', arrivalMs: best?.arrivalMs ?? null, tripId: best?.tripId ?? null };
+        const candidates = (this.arrivalsIndex.get(`${stationId}:${tLine}:${params.transferDirection}`) ?? []).filter(
+          (a) => a.arrivalMs >= stop.arrivalMs,
+        );
+        candidates.sort((a, b) => a.arrivalMs - b.arrivalMs);
+        const best = candidates[0];
+        return { line: tLine, direction: best?.direction ?? params.transferDirection, arrivalMs: best?.arrivalMs ?? null, tripId: best?.tripId ?? null };
       });
       return { stationId, name: station.name, arrivalMs: stop.arrivalMs, transfers };
     });

@@ -1,4 +1,4 @@
-import type { ActiveTrip, JourneyResponse, NearbyResponse } from './types';
+import type { ActiveTrip, Direction, JourneyResponse, NearbyResponse } from './types';
 
 // In production (the Vercel build), the API is served from the same origin
 // as the static site (see vercel.json), so relative /api/* paths just work.
@@ -15,11 +15,12 @@ export function fetchNearby(direction: 'downtown' | 'uptown'): Promise<NearbyRes
   return getJson(`/api/stations/nearby?direction=${direction}`);
 }
 
-export function fetchJourney(trip: ActiveTrip): Promise<JourneyResponse> {
+export function fetchJourney(trip: ActiveTrip, transferDirection: Direction): Promise<JourneyResponse> {
   const params = new URLSearchParams({
     tripId: trip.tripId,
     line: trip.line,
     direction: trip.direction,
+    transferDirection,
     boardedStationId: trip.boardedStationId,
     boardedArrivalMs: String(trip.boardedArrivalMs),
   });

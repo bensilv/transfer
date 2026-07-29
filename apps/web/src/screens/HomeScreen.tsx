@@ -1,10 +1,12 @@
+import { useEffect, useRef, useState } from 'react';
 import { fetchNearby } from '../api';
 import { usePolledData } from '../hooks/usePolledData';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useNowTick } from '../hooks/useNowTick';
 import { formatMinutesAway } from '../format';
+import { haversineMeters } from '../geo';
 import { StationMap } from '../components/StationMap';
-import type { ActiveTrip, Direction } from '../types';
+import type { ActiveTrip, Direction, NearbyStation } from '../types';
 
 export function HomeScreen({
   direction,
@@ -26,9 +28,36 @@ export function HomeScreen({
   // fine but failing to reach the live MTA feed for this request.
   const offline = fetchFailed || data?.status.online === false;
 
-  const stations = data?.stations ?? [];
+  // Wherever the pinned dot on the map currently points — starts at the
+  // rider's real GPS fix, but tracks the map as they pan it (see
+  // StationMap's onDotLocationChange), since the dot itself is no longer
+  // tied to their literal position once they've moved the map.
+  const [dotLocation, setDotLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const sortLocation = dotLocation ?? (geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null);
+
+  const unsortedStations = data?.stations ?? [];
+  // Order by distance from the rider's current reference point, nearest
+  // first, so the default focus and the station-picker strip both start
+  // with the closest station.
+  const stations: NearbyStation[] = sortLocation
+    ? [...unsortedStations].sort(
+        (a, b) =>
+          haversineMeters(sortLocation.lat, sortLocation.lon, a.lat, a.lon) -
+          haversineMeters(sortLocation.lat, sortLocation.lon, b.lat, b.lon),
+      )
+    : unsortedStations;
   const activeFocusId = focusedStationId ?? stations[0]?.id ?? null;
   const focused = stations.find((s) => s.id === activeFocusId) ?? null;
+
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [sheetHeightPx, setSheetHeightPx] = useState(0);
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setSheetHeightPx(entry.contentRect.height));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -37,14 +66,18 @@ export function HomeScreen({
         focusedId={activeFocusId}
         onFocusStation={onFocusStation}
         userLocation={geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null}
+        obstructedBottomPx={sheetHeightPx}
+        onDotLocationChange={setDotLocation}
       />
 
       <div
+        ref={sheetRef}
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
           bottom: 0,
+          zIndex: 1,
           background: '#fff',
           borderRadius: '20px 20px 0 0',
           boxShadow: '0 -8px 24px rgba(0,0,0,0.14)',

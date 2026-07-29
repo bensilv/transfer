@@ -60,6 +60,8 @@ export interface RealtimeProvider {
     tripId: string;
     line: string;
     direction: Direction;
+    /** Which direction's arrivals to show for each connecting line at each stop. */
+    transferDirection: Direction;
     boardedStationId: string;
     boardedArrivalMs: number;
   }): Promise<{ stops: JourneyStop[]; status: ProviderStatus }>;

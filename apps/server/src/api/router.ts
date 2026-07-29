@@ -58,6 +58,7 @@ router.get('/stations/nearby', async (req, res) => {
 router.get('/journey', async (req, res) => {
   const { tripId, line, boardedStationId } = req.query as Record<string, string | undefined>;
   const direction = parseDirection(req.query.direction);
+  const transferDirection = parseDirection(req.query.transferDirection);
   const boardedArrivalMs = Number(req.query.boardedArrivalMs);
 
   if (!tripId || !line || !boardedStationId || !Number.isFinite(boardedArrivalMs)) {
@@ -65,7 +66,14 @@ router.get('/journey', async (req, res) => {
     return;
   }
 
-  const { stops, status } = await getRealtimeProvider().getJourney({ tripId, line, direction, boardedStationId, boardedArrivalMs });
+  const { stops, status } = await getRealtimeProvider().getJourney({
+    tripId,
+    line,
+    direction,
+    transferDirection,
+    boardedStationId,
+    boardedArrivalMs,
+  });
 
   res.json({
     serverTime: Date.now(),

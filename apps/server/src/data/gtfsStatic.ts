@@ -44,11 +44,21 @@ async function fetchStopsTxt(): Promise<StaticStopRow[]> {
 }
 
 /**
- * Real MTA complex stop_id for each of our seeded stations, resolved by
+ * Real MTA complex stop_id(s) for each of our seeded stations, resolved by
  * matching stop_lat/stop_lon in the current static GTFS feed against our
  * seed coordinates (rather than trusting hardcoded IDs from memory, which
  * could never be verified against the live feed in the sandbox this was
  * built in — see data/stations.ts).
+ *
+ * A single seed can legitimately match several real parent stations: MTA's
+ * static GTFS models e.g. "14 St - 8 Av" as two separate complexes barely
+ * 100m apart — "14 St" (A/C/E, id A31) and "8 Av" (L, id L01) — joined only
+ * by a free in-system transfer passageway. Matching only the closest one
+ * silently drops every other line group's real-time data for that seed, so
+ * this keeps every parent within MAX_MATCH_METERS, not just the nearest.
+ *
+ * Returned as real stop_id -> our seed id (many-to-one) rather than the
+ * seed-keyed shape you might expect, since a seed can have multiple matches.
  */
 export async function resolveStationGtfsIds(): Promise<Record<string, string>> {
   const rows = await fetchStopsTxt();
@@ -59,21 +69,20 @@ export async function resolveStationGtfsIds(): Promise<Record<string, string>> {
 
   const result: Record<string, string> = {};
   for (const seed of STATIONS) {
-    let best: { id: string; dist: number } | null = null;
+    const matches: { id: string; dist: number }[] = [];
     for (const p of parents) {
       const lat = Number(p.stop_lat);
       const lon = Number(p.stop_lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       const dist = haversineMeters(seed.lat, seed.lon, lat, lon);
-      if (!best || dist < best.dist) best = { id: p.stop_id, dist };
+      if (dist <= MAX_MATCH_METERS) matches.push({ id: p.stop_id, dist });
     }
-    if (best && best.dist <= MAX_MATCH_METERS) {
-      result[seed.id] = best.id;
+    if (matches.length > 0) {
+      for (const m of matches) result[m.id] = seed.id;
     } else {
       // eslint-disable-next-line no-console
       console.warn(
-        `[gtfs-static] no static-GTFS station within ${MAX_MATCH_METERS}m of seed "${seed.name}" ` +
-          `(closest was ${best ? Math.round(best.dist) + 'm away' : 'none found'}) — it will show no live data.`,
+        `[gtfs-static] no static-GTFS station within ${MAX_MATCH_METERS}m of seed "${seed.name}" — it will show no live data.`,
       );
     }
   }

@@ -8,10 +8,10 @@ export function formatClock(ms: number): string {
   return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-/** "2 min" / "NOW", prefixed with "~" while running on stale (offline) data. */
-export function formatMinutesAway(arrivalMs: number, nowMs: number, offline: boolean): string {
+/** "2 min" / zeroLabel, prefixed with "~" while running on stale (offline) data. */
+export function formatMinutesAway(arrivalMs: number, nowMs: number, offline: boolean, zeroLabel = 'NOW'): string {
   const mins = Math.round((arrivalMs - nowMs) / 60000);
-  const text = mins <= 0 ? 'NOW' : `${mins} min`;
+  const text = mins <= 0 ? zeroLabel : `${mins} min`;
   return offline ? `~${text}` : text;
 }
 

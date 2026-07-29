@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { fetchJourney } from '../api';
 import { usePolledData } from '../hooks/usePolledData';
 import { useNowTick } from '../hooks/useNowTick';
 import { formatClock, formatMinutesAway, formatUpdatedAgo } from '../format';
 import { LINE_COLORS, textColorFor } from '../lines';
-import type { ActiveTrip } from '../types';
+import type { ActiveTrip, Direction } from '../types';
 
 export function JourneyScreen({
   active,
@@ -23,8 +23,29 @@ export function JourneyScreen({
 }) {
   const now = useNowTick();
   const displayed = preview ?? active;
-  const journeyKey = [displayed.tripId, displayed.line, displayed.direction, displayed.boardedStationId, displayed.boardedArrivalMs].join('|');
-  const { data, offline: fetchFailed, lastFetchTs, refresh, refreshing } = usePolledData(() => fetchJourney(displayed), journeyKey);
+
+  // Which direction's arrivals to show for connecting lines at each stop.
+  // Defaults to whichever train is currently boarded, and resets to match
+  // it again each time the rider actually boards a new one (confirming a
+  // transfer) — but not while merely previewing, so toggling doesn't get
+  // clobbered by a preview that hasn't been confirmed yet.
+  const [transferDirection, setTransferDirection] = useState<Direction>(active.direction);
+  useEffect(() => {
+    setTransferDirection(active.direction);
+  }, [active.tripId, active.direction]);
+
+  const journeyKey = [
+    displayed.tripId,
+    displayed.line,
+    displayed.direction,
+    displayed.boardedStationId,
+    displayed.boardedArrivalMs,
+    transferDirection,
+  ].join('|');
+  const { data, offline: fetchFailed, lastFetchTs, refresh, refreshing } = usePolledData(
+    () => fetchJourney(displayed, transferDirection),
+    journeyKey,
+  );
   // "offline" covers both our own request failing and the backend reaching us
   // fine but failing to reach the live MTA feed for this request.
   const offline = fetchFailed || data?.status.online === false;
@@ -65,6 +86,31 @@ export function JourneyScreen({
             <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{displayed.direction === 'uptown' ? 'Uptown' : 'Downtown'}</span>
           </div>
           <div style={{ width: 32 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 10px' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#8a8a90' }}>Show transfers toward</span>
+          <div style={{ display: 'flex', background: '#f1f1f3', borderRadius: 10, padding: 2 }}>
+            <button
+              onClick={() => setTransferDirection('downtown')}
+              style={{
+                padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: transferDirection === 'downtown' ? '#fff' : 'transparent',
+                color: transferDirection === 'downtown' ? '#1a1a1a' : '#8a8a90',
+              }}
+            >
+              Downtown
+            </button>
+            <button
+              onClick={() => setTransferDirection('uptown')}
+              style={{
+                padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: transferDirection === 'uptown' ? '#fff' : 'transparent',
+                color: transferDirection === 'uptown' ? '#1a1a1a' : '#8a8a90',
+              }}
+            >
+              Uptown
+            </button>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px 10px' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: offline ? '#e0433d' : '#1a9c53', flexShrink: 0 }} />
@@ -117,7 +163,7 @@ export function JourneyScreen({
                               fontStyle: !noData && offline ? 'italic' : 'normal',
                             }}
                           >
-                            {noData ? 'NO DATA' : formatMinutesAway(tr.arrivalMs!, now, offline)}
+                            {noData ? 'NO DATA' : formatMinutesAway(tr.arrivalMs!, sp.arrivalMs, offline, '0 min')}
                           </span>
                         </button>
                       );

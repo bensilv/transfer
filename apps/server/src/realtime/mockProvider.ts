@@ -34,15 +34,11 @@ function generateArrivals(stationId: string, line: string, direction: Direction,
   return arrivals;
 }
 
-/** Soonest arrival of `line` at `stationId`, across both directions, after `afterMs`. Deterministically absent ~1 in 6 times, mirroring how a connecting line can lack live predictions. */
-function soonestConnectingArrival(stationId: string, line: string, afterMs: number): Arrival | null {
+/** Soonest arrival of `line` at `stationId` in the given direction, after `afterMs`. Deterministically absent ~1 in 6 times, mirroring how a connecting line can lack live predictions. */
+function soonestConnectingArrival(stationId: string, line: string, direction: Direction, afterMs: number): Arrival | null {
   const noData = hashStr(`${stationId}:${line}:${Math.floor(afterMs / (5 * 60_000))}`) % 6 === 0;
   if (noData) return null;
-  const down = generateArrivals(stationId, line, 'downtown', afterMs)[0] ?? null;
-  const up = generateArrivals(stationId, line, 'uptown', afterMs)[0] ?? null;
-  if (!down) return up;
-  if (!up) return down;
-  return down.arrivalMs <= up.arrivalMs ? down : up;
+  return generateArrivals(stationId, line, direction, afterMs)[0] ?? null;
 }
 
 export class MockRealtimeProvider implements RealtimeProvider {
@@ -59,10 +55,11 @@ export class MockRealtimeProvider implements RealtimeProvider {
     tripId: string;
     line: string;
     direction: Direction;
+    transferDirection: Direction;
     boardedStationId: string;
     boardedArrivalMs: number;
   }): Promise<{ stops: JourneyStop[]; status: typeof ALWAYS_ONLINE }> {
-    const { line, direction, boardedStationId, boardedArrivalMs } = params;
+    const { line, direction, transferDirection, boardedStationId, boardedArrivalMs } = params;
     const stopIds = remainingStops(line, direction, boardedStationId);
     const stops: JourneyStop[] = [];
     let prevId = boardedStationId;
@@ -72,8 +69,8 @@ export class MockRealtimeProvider implements RealtimeProvider {
       const arrivalMs = Math.round(prevArrival + hop);
       const station = STATIONS.find((s) => s.id === stationId);
       const transfers = connectingLines(stationId, line).map((tLine) => {
-        const best = soonestConnectingArrival(stationId, tLine, arrivalMs);
-        return { line: tLine, direction: best?.direction ?? 'downtown', arrivalMs: best?.arrivalMs ?? null, tripId: best?.tripId ?? null };
+        const best = soonestConnectingArrival(stationId, tLine, transferDirection, arrivalMs);
+        return { line: tLine, direction: best?.direction ?? transferDirection, arrivalMs: best?.arrivalMs ?? null, tripId: best?.tripId ?? null };
       });
       stops.push({ stationId, name: station?.name ?? stationId, arrivalMs, transfers });
       prevId = stationId;
