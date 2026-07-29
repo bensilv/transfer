@@ -1,18 +1,39 @@
 import { Router } from 'express';
 import { STATIONS } from '../data/stations.js';
+import { haversineMeters } from '../data/geo.js';
 import { LINE_COLORS, textColorFor } from '../data/lines.js';
-import { DATA_SOURCE } from '../config.js';
 import { getRealtimeProvider } from '../realtime/provider.js';
 import type { Direction } from '../realtime/types.js';
 
 export const router = Router();
 
+// How many stations "nearby" returns by default, and the most a caller can
+// ask for — keeps the common case (a rider's map view) from building and
+// shipping arrivals for all ~450 stations system-wide on every poll.
+const DEFAULT_NEARBY_LIMIT = 15;
+const MAX_NEARBY_LIMIT = 100;
+
+// Used to rank/cap stations when the caller doesn't supply a real lat/lon
+// (e.g. before geolocation resolves) — roughly central Manhattan.
+const DEFAULT_REFERENCE = { lat: 40.7318, lon: -74.0002 };
+
 function parseDirection(v: unknown): Direction {
   return v === 'uptown' ? 'uptown' : 'downtown';
 }
 
+function parseFiniteNumber(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseLimit(v: unknown): number {
+  const n = parseFiniteNumber(v);
+  if (n === null) return DEFAULT_NEARBY_LIMIT;
+  return Math.max(1, Math.min(MAX_NEARBY_LIMIT, Math.round(n)));
+}
+
 router.get('/health', (_req, res) => {
-  res.json({ serverTime: Date.now(), dataSource: DATA_SOURCE });
+  res.json({ serverTime: Date.now() });
 });
 
 router.get('/stations', (_req, res) => {
@@ -31,10 +52,18 @@ router.get('/stations', (_req, res) => {
 // Screen 1: nearby stations + per-line arrivals in the currently selected direction.
 router.get('/stations/nearby', async (req, res) => {
   const direction = parseDirection(req.query.direction);
-  const { stations: arrivalsByStation, status } = await getRealtimeProvider().getNearbyArrivals(direction);
+  const limit = parseLimit(req.query.limit);
+  const lat = parseFiniteNumber(req.query.lat) ?? DEFAULT_REFERENCE.lat;
+  const lon = parseFiniteNumber(req.query.lon) ?? DEFAULT_REFERENCE.lon;
+
+  const nearest = [...STATIONS]
+    .sort((a, b) => haversineMeters(lat, lon, a.lat, a.lon) - haversineMeters(lat, lon, b.lat, b.lon))
+    .slice(0, limit);
+
+  const { stations: arrivalsByStation, status } = await getRealtimeProvider().getNearbyArrivals(direction, nearest);
   const arrivalsById = new Map(arrivalsByStation.map((s) => [s.stationId, s.arrivalsByLine]));
 
-  const stations = STATIONS.map((s) => {
+  const stations = nearest.map((s) => {
     const arrivalsByLine = arrivalsById.get(s.id) ?? {};
     return {
       id: s.id,

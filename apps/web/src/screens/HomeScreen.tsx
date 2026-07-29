@@ -23,10 +23,6 @@ export function HomeScreen({
 }) {
   const geo = useGeolocation();
   const now = useNowTick();
-  const { data, offline: fetchFailed } = usePolledData(() => fetchNearby(direction), direction);
-  // "offline" covers both our own request failing and the backend reaching us
-  // fine but failing to reach the live MTA feed for this request.
-  const offline = fetchFailed || data?.status.online === false;
 
   // Wherever the pinned dot on the map currently points — starts at the
   // rider's real GPS fix, but tracks the map as they pan it (see
@@ -34,6 +30,27 @@ export function HomeScreen({
   // tied to their literal position once they've moved the map.
   const [dotLocation, setDotLocation] = useState<{ lat: number; lon: number } | null>(null);
   const sortLocation = dotLocation ?? (geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null);
+
+  // Distinct from `dotLocation`: updates only once a pan/fly *settles*
+  // (StationMap's onDotLocationSettled, i.e. moveend), not on every
+  // intermediate drag frame. This is what the server-capped "nearby" set is
+  // actually fetched around, so moving the pin refetches which stations show
+  // up — not just re-sorting whatever was already loaded — without spamming
+  // the API mid-gesture. Falls back to sortLocation before the first
+  // settle (e.g. the very first geo fix, before any pan has happened).
+  const [fetchLocation, setFetchLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const effectiveFetchLocation = fetchLocation ?? sortLocation;
+  const fetchLocationKey = effectiveFetchLocation
+    ? `${effectiveFetchLocation.lat.toFixed(4)},${effectiveFetchLocation.lon.toFixed(4)}`
+    : 'none';
+
+  const { data, offline: fetchFailed } = usePolledData(
+    () => fetchNearby(direction, effectiveFetchLocation),
+    `${direction}:${fetchLocationKey}`,
+  );
+  // "offline" covers both our own request failing and the backend reaching us
+  // fine but failing to reach the live MTA feed for this request.
+  const offline = fetchFailed || data?.status.online === false;
 
   const unsortedStations = data?.stations ?? [];
   // Order by distance from the rider's current reference point, nearest
@@ -68,6 +85,7 @@ export function HomeScreen({
         userLocation={geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null}
         obstructedBottomPx={sheetHeightPx}
         onDotLocationChange={setDotLocation}
+        onDotLocationSettled={setFetchLocation}
       />
 
       <div
@@ -128,6 +146,9 @@ export function HomeScreen({
                     {ln.line}
                   </span>
                   <div data-noscroll style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, flex: 1, minWidth: 0 }}>
+                    {ln.arrivals.length === 0 && !offline && (
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#9a9aa0', padding: '7px 0' }}>No upcoming trains</span>
+                    )}
                     {ln.arrivals.map((a) => (
                       <button
                         key={a.tripId}

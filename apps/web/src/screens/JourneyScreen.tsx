@@ -170,7 +170,7 @@ export function JourneyScreen({
                     })}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, color: '#9a9aa0' }}>No further connections &mdash; end of line</div>
+                  <div style={{ fontSize: 12, color: '#9a9aa0' }}>No further connections</div>
                 )}
               </div>
             </div>

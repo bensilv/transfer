@@ -33,12 +33,27 @@ function dotLatLng(map: L.Map, upByPx: number): L.LatLng {
 /** Reports the coordinate under the dot every time the map pans or flies —
  * lets the rest of the app (e.g. "nearest station" sorting) treat "wherever
  * the pinned dot is pointing" as the rider's current reference point, not
- * just their literal last GPS fix. */
-function TrackDotLocation({ dotOffsetPx, onChange }: { dotOffsetPx: number; onChange: (loc: { lat: number; lon: number }) => void }) {
+ * just their literal last GPS fix. Also reports once a pan/fly *settles*
+ * (moveend) — distinct from the continuous `move` stream — so callers that
+ * need to re-fetch from the server (not just re-sort what's already loaded)
+ * can do it once per gesture instead of on every intermediate frame. */
+function TrackDotLocation({
+  dotOffsetPx,
+  onChange,
+  onSettle,
+}: {
+  dotOffsetPx: number;
+  onChange: (loc: { lat: number; lon: number }) => void;
+  onSettle?: (loc: { lat: number; lon: number }) => void;
+}) {
   const map = useMapEvents({
     move: () => {
       const { lat, lng } = dotLatLng(map, dotOffsetPx);
       onChange({ lat, lon: lng });
+    },
+    moveend: () => {
+      const { lat, lng } = dotLatLng(map, dotOffsetPx);
+      onSettle?.({ lat, lon: lng });
     },
   });
   return null;
@@ -148,6 +163,7 @@ export function StationMap({
   userLocation,
   obstructedBottomPx = 0,
   onDotLocationChange,
+  onDotLocationSettled,
 }: {
   stations: NearbyStation[];
   focusedId: string | null;
@@ -157,6 +173,8 @@ export function StationMap({
   obstructedBottomPx?: number;
   /** Called with the coordinate under the dot whenever the map pans or flies. */
   onDotLocationChange?: (loc: { lat: number; lon: number }) => void;
+  /** Called once a pan/fly settles (moveend), not on every intermediate frame — for callers that need to re-fetch rather than just re-sort. */
+  onDotLocationSettled?: (loc: { lat: number; lon: number }) => void;
 }) {
   const dotOffsetPx = obstructedBottomPx / 2;
   return (
@@ -176,7 +194,13 @@ export function StationMap({
           <>
             <RecenterOnce lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
             <RecenterButton lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
-            {onDotLocationChange && <TrackDotLocation dotOffsetPx={dotOffsetPx} onChange={onDotLocationChange} />}
+            {(onDotLocationChange || onDotLocationSettled) && (
+              <TrackDotLocation
+                dotOffsetPx={dotOffsetPx}
+                onChange={onDotLocationChange ?? (() => {})}
+                onSettle={onDotLocationSettled}
+              />
+            )}
           </>
         )}
         {stations.map((st) => {

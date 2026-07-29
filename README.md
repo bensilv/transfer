@@ -28,9 +28,9 @@ The design medium is **HTML/CSS/JS** — these are prototypes, not production co
 
 The mockup above has been implemented as a real app in `apps/`:
 
-- `apps/server` — Express/TypeScript backend: real MTA GTFS-RT integration
-  (`DATA_SOURCE=mta`) plus a deterministic mock mode (`DATA_SOURCE=mock`,
-  the default) for development without network access to MTA's servers.
+- `apps/server` — Express/TypeScript backend: real MTA GTFS-RT integration,
+  covering every subway/SIR station system-wide (needs live network access
+  to MTA's public feeds — no offline/mock mode).
 - `apps/web` — React/Vite mobile-responsive frontend implementing Screen 1
   (map + bottom sheet) and Screen 2 (journey/transfer view) from the mockup.
 

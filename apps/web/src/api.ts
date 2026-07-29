@@ -11,8 +11,18 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function fetchNearby(direction: 'downtown' | 'uptown'): Promise<NearbyResponse> {
-  return getJson(`/api/stations/nearby?direction=${direction}`);
+export function fetchNearby(
+  direction: 'downtown' | 'uptown',
+  loc?: { lat: number; lon: number } | null,
+  limit?: number,
+): Promise<NearbyResponse> {
+  const params = new URLSearchParams({ direction });
+  if (loc) {
+    params.set('lat', String(loc.lat));
+    params.set('lon', String(loc.lon));
+  }
+  if (limit !== undefined) params.set('limit', String(limit));
+  return getJson(`/api/stations/nearby?${params.toString()}`);
 }
 
 export function fetchJourney(trip: ActiveTrip, transferDirection: Direction): Promise<JourneyResponse> {

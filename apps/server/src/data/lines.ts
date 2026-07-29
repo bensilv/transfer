@@ -10,6 +10,10 @@ export const LINE_COLORS: Record<string, string> = {
   L: '#A7A9AC',
   N: '#FCCC0A', Q: '#FCCC0A', R: '#FCCC0A', W: '#FCCC0A',
   S: '#808183',
+  // Staten Island Railway's bullet is a blue circle per MTA maps, but no
+  // official hex is documented here — this is an approximation, not a
+  // verified brand color.
+  SIR: '#0039A6',
 };
 
 export const LIGHT_TEXT_LINES = new Set(['N', 'Q', 'R', 'W', 'L']);

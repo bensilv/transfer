@@ -1,6 +1,7 @@
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import type { transit_realtime } from 'gtfs-realtime-bindings';
 import { STATIONS, connectingLines } from '../data/stations.js';
+import type { Station } from '../data/stations.js';
 import { FEED_GROUP_FOR_ROUTE } from '../data/lines.js';
 import { getStationGtfsIds } from '../data/gtfsStatic.js';
 import type { Arrival, Direction, JourneyStop, NearbyStationArrivals, ProviderStatus, RealtimeProvider } from './types.js';
@@ -18,9 +19,12 @@ const FEED_URL: Record<string, string> = {
   l: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l',
 };
 
-const ALL_NEEDED_GROUPS = Array.from(
-  new Set(STATIONS.flatMap((s) => s.lines).map((l) => FEED_GROUP_FOR_ROUTE[l]).filter((g): g is string => !!g)),
-);
+/** Feed groups covering every line served by `stations`, deduplicated. */
+function neededGroups(stations: Station[]): string[] {
+  return Array.from(
+    new Set(stations.flatMap((s) => s.lines).map((l) => FEED_GROUP_FOR_ROUTE[l]).filter((g): g is string => !!g)),
+  );
+}
 
 interface DecodedArrival {
   tripId: string;
@@ -77,7 +81,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
   private async ensureStationMapping(): Promise<void> {
     if (this.stationByGtfsId.size > 0) return;
     // Real GTFS stop_id -> our station id; a station id can appear as the
-    // value for several real stop_ids (see resolveStationGtfsIds).
+    // value for several real stop_ids (see getStationGtfsIds).
     const ids = await getStationGtfsIds();
     for (const [gtfsId, stationId] of Object.entries(ids)) {
       this.stationByGtfsId.set(gtfsId, stationId);
@@ -138,12 +142,15 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     return { online: failures.length === 0, lastErrorMessage: failures.length ? failures.join('; ') : null };
   }
 
-  async getNearbyArrivals(direction: Direction): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }> {
+  async getNearbyArrivals(
+    direction: Direction,
+    targetStations: Station[],
+  ): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }> {
     await this.ensureStationMapping();
-    const failures = await this.refresh(ALL_NEEDED_GROUPS);
+    const failures = await this.refresh(neededGroups(targetStations));
     const now = Date.now();
 
-    const stations = STATIONS.map((st) => ({
+    const stations = targetStations.map((st) => ({
       stationId: st.id,
       arrivalsByLine: Object.fromEntries(
         st.lines.map((line) => [

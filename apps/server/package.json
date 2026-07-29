@@ -10,10 +10,8 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "csv-parse": "^7.0.1",
     "express": "^4.21.2",
-    "gtfs-realtime-bindings": "^2.1.0",
-    "jszip": "^3.10.1"
+    "gtfs-realtime-bindings": "^2.1.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -11,10 +11,10 @@ One Vercel project serves both apps: `apps/web` builds as the static site,
    `apps/web`. `vercel.json` already knows where each app lives.
 3. **Framework Preset**: Vercel should detect "Other" / use `vercel.json`
    as-is. You don't need to set a build/output command manually.
-4. Click **Deploy**. No environment variables are required — `DATA_SOURCE`
-   already defaults to `mta` (real live data) if unset. Only set it to
-   `mock` if you want deterministic demo data instead (e.g. for a preview
-   deploy with no network access to MTA's servers).
+4. Click **Deploy**. No environment variables are required — the server
+   always fetches MTA's real public GTFS-RT feeds, no API key needed. It
+   does need live network access to MTA's servers at request time; there's
+   no offline/mock fallback.
 
 The frontend calls its own `/api/*` on the same domain, so there's no
 separate API URL to configure.
@@ -36,13 +36,10 @@ resolving one of the `.js`-suffixed TypeScript imports in `apps/server/src`
 
 ## Verifying live MTA data actually works
 
-Once deployed with `DATA_SOURCE=mta`, open the site and check:
+Once deployed, open the site and check:
 
-- Screen 1 shows real upcoming arrival times (not suspiciously round numbers
-  every ~2-11 minutes, which is the mock generator's pattern).
-- If a station shows no arrivals for a line at all, check the function logs
-  in the Vercel dashboard for `[gtfs-static]` warnings — that means the
-  coordinate-matching in `apps/server/src/data/gtfsStatic.ts` couldn't find a
-  real station within 300m of that seed station's coordinates, possibly
-  because MTA moved the static GTFS bundle (see `GTFS_STATIC_URL` in
-  `apps/server/.env.example`) or the seed coordinates need adjusting.
+- Screen 1 shows real upcoming arrival times for stations near you.
+- If a station shows no arrivals for any line, that line's GTFS-RT feed may
+  just be quiet at that moment — retry, or check the Vercel function logs for
+  fetch errors. Staten Island Railway stations never show arrivals: none of
+  MTA's subway GTFS-RT feeds cover SIR.

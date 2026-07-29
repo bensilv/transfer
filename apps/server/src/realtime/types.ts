@@ -1,3 +1,5 @@
+import type { Station } from '../data/stations.js';
+
 export type Direction = 'uptown' | 'downtown';
 
 /** A single predicted arrival of a specific trip at a specific station. */
@@ -37,21 +39,18 @@ export interface NearbyStationArrivals {
 }
 
 /**
- * Source of truth for live arrivals. Two implementations:
- *  - MtaGtfsRealtimeProvider: fetches the real public MTA GTFS-RT feeds,
- *    on demand, within each request (no background process — this runs as a
- *    Vercel serverless function, which can't rely on a persistent timer).
- *  - MockRealtimeProvider: deterministic generated data for local dev/demo,
- *    used because this sandbox's network policy blocks the MTA endpoints
- *    this was originally developed in.
- *
- * Both expose the same read API, so the API layer doesn't know or care
- * which one is active. Each call reports its own ProviderStatus (rather
- * than a shared/cached one) since there's no persistent poll loop to ask.
+ * Source of truth for live arrivals: MtaGtfsRealtimeProvider fetches the real
+ * public MTA GTFS-RT feeds on demand, within each request (no background
+ * process — this runs as a Vercel serverless function, which can't rely on a
+ * persistent timer). Each call reports its own ProviderStatus (rather than a
+ * shared/cached one) since there's no persistent poll loop to ask.
  */
 export interface RealtimeProvider {
-  /** Every seeded station's arrivals, by line, in the given direction — one call, not one per station. */
-  getNearbyArrivals(direction: Direction): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }>;
+  /** Arrivals by line, in the given direction, for exactly the given stations — one call, not one per station. */
+  getNearbyArrivals(
+    direction: Direction,
+    stations: Station[],
+  ): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }>;
   /**
    * Remaining-stop journey for a specific trip the user has already boarded,
    * starting from `boardedStationId`/`boardedArrivalMs` (the arrival they tapped).

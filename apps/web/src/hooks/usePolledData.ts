@@ -15,8 +15,10 @@ export interface PolledData<T> {
 /**
  * Polls `fetcher` on an interval, keeping the last successful response
  * around when a fetch fails instead of clearing it — the BRD's "last known
- * good data is a normal operating state, not an error state" behavior.
- * Re-fetches immediately whenever `depsKey` changes.
+ * good data is a normal operating state, not an error state" behavior. The
+ * same applies when `depsKey` changes (e.g. the rider pans to a new area):
+ * the previous result stays displayed until the new one arrives, rather
+ * than flashing empty. Re-fetches immediately whenever `depsKey` changes.
  */
 export function usePolledData<T>(fetcher: () => Promise<T>, depsKey: string): PolledData<T> {
   const [data, setData] = useState<T | null>(null);
@@ -41,9 +43,6 @@ export function usePolledData<T>(fetcher: () => Promise<T>, depsKey: string): Po
   });
 
   useEffect(() => {
-    setData(null);
-    setOffline(false);
-    setLastFetchTs(null);
     let cancelled = false;
     const run = async (isManual: boolean) => {
       if (cancelled) return;
