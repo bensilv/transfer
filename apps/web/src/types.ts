@@ -79,3 +79,16 @@ export interface ActiveTrip {
   boardedStationId: string;
   boardedArrivalMs: number;
 }
+
+/** One leg of a multi-leg journey.  routePoints is filled in when the rider
+ * taps a stop to alight, so subsequent screens can draw the leg on the map. */
+export interface JourneyLeg extends ActiveTrip {
+  routePoints?: [number, number][];
+}
+
+/** Anchor for the station-selection screen: the stop the rider tapped. */
+export interface StationAnchor {
+  stationId: string;
+  lat: number;
+  lon: number;
+}

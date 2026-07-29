@@ -11,7 +11,8 @@ import { pickDirectionLabels } from '../directionLabels';
 import { buildRoutePath, pointAlong } from '../routeGeometry';
 import { BottomSheet, SHEET_HANDLE_HEIGHT_PX } from '../components/BottomSheet';
 import { StationMap, type RouteStopMarker } from '../components/StationMap';
-import type { ActiveTrip, Direction } from '../types';
+import type { ActiveTrip, Direction, JourneyLeg } from '../types';
+import type { RouteHighlight } from '../components/StationMap';
 
 // Sheet snap fractions/caps — "default" leaves a clear strip of map visible
 // above the sheet (the point of putting the map behind this screen at all),
@@ -28,17 +29,23 @@ const OWN_SCROLL_IGNORE_MS = 700;
 
 export function JourneyScreen({
   active,
+  previousLegs,
   preview,
   onPreviewTransfer,
   onCancelPreview,
   onConfirmPreview,
+  onAlightAt,
   onGoHome,
 }: {
   active: ActiveTrip;
+  /** Completed earlier legs — their stored routePoints are drawn on the map. */
+  previousLegs?: JourneyLeg[];
   preview: ActiveTrip | null;
   onPreviewTransfer: (trip: ActiveTrip) => void;
   onCancelPreview: () => void;
   onConfirmPreview: () => void;
+  /** Called when the rider taps a stop to open the station-selection screen. */
+  onAlightAt: (stationId: string, lat: number, lon: number, routePoints: [number, number][]) => void;
   onGoHome: () => void;
 }) {
   const now = useNowTick();
@@ -105,6 +112,14 @@ export function JourneyScreen({
     arrivalBadge: i === 0 && now < s.arrivalMs ? formatMinutesAway(s.arrivalMs, now, offline) : null,
   }));
 
+  // Combine previous legs' stored route paths with the current leg's live path.
+  const allRoutes: RouteHighlight[] = [
+    ...(previousLegs ?? [])
+      .filter((l) => l.routePoints && l.routePoints.length > 0)
+      .map((l) => ({ color: LINE_COLORS[l.line] ?? '#888', points: l.routePoints as [number, number][] })),
+    ...(routePath ? [{ color: displayLineColor, points: routePath.points }] : []),
+  ];
+
   // --- Floating top bar + sheet sizing ---
   const topBarRef = useRef<HTMLDivElement>(null);
   const [topBarHeight, setTopBarHeight] = useState(64);
@@ -159,7 +174,7 @@ export function JourneyScreen({
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       <StationMap
-        routes={routePath ? [{ color: displayLineColor, points: routePath.points }] : []}
+        routes={allRoutes}
         routeStops={routeStopMarkers}
         trainMarker={trainPoint ? { position: trainPoint, color: displayLineColor } : null}
         fitBounds={routePath ? { points: routePath.points, key: legKey } : undefined}
@@ -274,9 +289,16 @@ export function JourneyScreen({
                     <div style={{ flex: 1, width: 2, background: '#e2e2e6', display: i === stops.length - 1 ? 'none' : 'block' }} />
                   </div>
                   <div style={{ flex: 1, paddingBottom: 22, opacity: isPassed ? 0.55 : 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{sp.name}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#8a8a90', marginBottom: 8 }}>
-                      {isPassed ? formatClock(sp.arrivalMs) : `${formatClock(sp.arrivalMs)} · ${stopMinsAway(sp.arrivalMs, now)}`}
+                    <div
+                      onClick={() => {
+                        if (!isPassed) onAlightAt(sp.stationId, sp.lat, sp.lon, routePath?.points ?? []);
+                      }}
+                      style={{ cursor: isPassed ? 'default' : 'pointer', marginBottom: 8 }}
+                    >
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{sp.name}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#8a8a90' }}>
+                        {isPassed ? formatClock(sp.arrivalMs) : `${formatClock(sp.arrivalMs)} · ${stopMinsAway(sp.arrivalMs, now)}`}
+                      </div>
                     </div>
                     {sp.transfers.length > 0 ? (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

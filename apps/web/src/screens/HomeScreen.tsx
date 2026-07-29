@@ -6,10 +6,11 @@ import { useNowTick } from '../hooks/useNowTick';
 import { useViewportHeight } from '../hooks/useViewportHeight';
 import { formatMinutesAway } from '../format';
 import { haversineMeters } from '../geo';
+import { LINE_COLORS } from '../lines';
 import { StationMap } from '../components/StationMap';
 import { BottomSheet, SHEET_HANDLE_HEIGHT_PX } from '../components/BottomSheet';
 import { pickDirectionLabels } from '../directionLabels';
-import type { ActiveTrip, Direction, NearbyStation } from '../types';
+import type { ActiveTrip, Direction, JourneyLeg, NearbyStation, StationAnchor } from '../types';
 
 // Fraction of the viewport the sheet expands to, capped so it doesn't get
 // absurdly tall on large screens — matches the old fixed-content sheet's
@@ -25,22 +26,32 @@ export function HomeScreen({
   focusedStationId,
   onFocusStation,
   onSelectArrival,
+  anchor,
+  previousLegs,
+  onBack,
 }: {
   direction: Direction;
   onSetDirection: (d: Direction) => void;
   focusedStationId: string | null;
   onFocusStation: (id: string) => void;
   onSelectArrival: (trip: ActiveTrip) => void;
+  /** When set, the screen acts as a station-selection view anchored here
+   * instead of following GPS. The map centers on this location initially. */
+  anchor?: StationAnchor;
+  /** Completed journey legs whose route geometry should be drawn on the map. */
+  previousLegs?: JourneyLeg[];
+  /** If provided, a floating back button is shown (used in station-select mode). */
+  onBack?: () => void;
 }) {
   const geo = useGeolocation();
   const now = useNowTick();
   const viewportHeight = useViewportHeight();
 
-  // Wherever the pinned dot on the map currently points — starts at the
-  // rider's real GPS fix, but tracks the map as they pan it (see
-  // StationMap's onDotLocationChange), since the dot itself is no longer
-  // tied to their literal position once they've moved the map.
-  const [dotLocation, setDotLocation] = useState<{ lat: number; lon: number } | null>(null);
+  // In anchor mode the dot starts at the anchor location so the map and fetch
+  // both centre on the station the rider tapped, not their GPS position.
+  const [dotLocation, setDotLocation] = useState<{ lat: number; lon: number } | null>(
+    anchor ? { lat: anchor.lat, lon: anchor.lon } : null,
+  );
   const sortLocation = dotLocation ?? (geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null);
 
   // Distinct from `dotLocation`: updates only once a pan/fly *settles*
@@ -75,9 +86,17 @@ export function HomeScreen({
           haversineMeters(sortLocation.lat, sortLocation.lon, b.lat, b.lon),
       )
     : unsortedStations;
-  const activeFocusId = focusedStationId ?? stations[0]?.id ?? null;
+  // In anchor mode the anchor station is the default focus even before nearby
+  // data loads, since we know exactly which station the rider wants to see.
+  const defaultFocusId = anchor?.stationId ?? null;
+  const activeFocusId = focusedStationId ?? defaultFocusId ?? stations[0]?.id ?? null;
   const focused = stations.find((s) => s.id === activeFocusId) ?? null;
   const { toggle: toggleLabels } = pickDirectionLabels(focused?.lines ?? []);
+
+  // Routes for completed previous legs — drawn on the map in station-select mode.
+  const previousRoutes = (previousLegs ?? [])
+    .filter((l) => l.routePoints && l.routePoints.length > 0)
+    .map((l) => ({ color: LINE_COLORS[l.line] ?? '#888', points: l.routePoints as [number, number][] }));
 
   // Sheet snap points: collapsed shows just the handle and the station strip
   // (so you can still switch stations with the map full-screen behind it),
@@ -126,7 +145,27 @@ export function HomeScreen({
         obstructedBottomPx={sheetHeightPx}
         onDotLocationChange={setDotLocation}
         onDotLocationSettled={setFetchLocation}
+        routes={previousRoutes.length > 0 ? previousRoutes : undefined}
       />
+
+      {onBack && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'max(14px, env(safe-area-inset-top))',
+            left: 16,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <button onClick={onBack} style={backBtnStyle}>‹</button>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '6px 14px', boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Pick a transfer</span>
+          </div>
+        </div>
+      )}
 
       <BottomSheet
         snapPoints={snapPoints}
@@ -249,3 +288,11 @@ export function HomeScreen({
     </div>
   );
 }
+
+const backBtnStyle: React.CSSProperties = {
+  width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none',
+  fontSize: 20, fontWeight: 700, color: '#555', cursor: 'pointer',
+  boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  paddingBottom: 1,
+};
