@@ -20,14 +20,6 @@ const STATION_RADIUS_FOCUSED_M = 18;
 // map itself buttery (throttling is on the callback, not the pan/zoom) while
 // visibly slowing how often the rest of the UI reacts.
 const DOT_LOCATION_THROTTLE_MS = 150;
-// A fix at or under this radius (meters) is treated as good enough to trust
-// for the map's one-time initial recenter — a coarse first fix (see
-// RecenterOnce) shouldn't win just because it happened to arrive first.
-const RECENTER_GOOD_ACCURACY_M = 65;
-// Caps how long the initial recenter waits for a good fix before giving up
-// and using the best one seen so far — covers devices (e.g. desktop, or GPS
-// stuck indoors) where accuracy may never dip below the threshold above.
-const RECENTER_MAX_WAIT_MS = 4000;
 const LINE_SHAPE_WEIGHT = 3;
 const LINE_SHAPE_OPACITY = 0.75;
 const LINE_SHAPE_FALLBACK_COLOR = '#888';
@@ -99,57 +91,28 @@ function TrackDotLocation({
 }
 
 /**
- * Flies to the rider's location exactly once — but waits (briefly) for a fix
- * accurate enough to trust, rather than the very first watchPosition callback,
- * which on phones is often a fast, coarse network/cell fix that lands before
- * the GPS chip actually locks on. Tracks the best fix seen so far so a
- * transient dip in accuracy can't win over an earlier better one, and gives
- * up after RECENTER_MAX_WAIT_MS so devices whose accuracy never improves
- * (desktop, GPS stuck indoors) still get centered on something.
+ * Keeps flying to the rider's location as new fixes arrive, until they touch
+ * the map themselves. A first GPS fix is often a coarse network/cell
+ * position that lands well before the chip actually locks on — how long
+ * that takes varies a lot (worse in dense areas like downtown Brooklyn), so
+ * rather than guess a timeout for "good enough," this just keeps correcting
+ * itself for as long as the rider hasn't taken over. `dragstart` (real user
+ * panning, not our own programmatic flyTo — flyTo never fires it) is what
+ * hands over control.
  */
-function RecenterOnce({
-  lat,
-  lon,
-  accuracy,
-  dotOffsetPx,
-}: {
-  lat: number;
-  lon: number;
-  accuracy: number | null;
-  dotOffsetPx: number;
-}) {
-  const map = useMap();
-  const done = useRef(false);
-  const bestRef = useRef<{ lat: number; lon: number; accuracy: number } | null>(null);
-  const startRef = useRef<number | null>(null);
-
-  const flyToBest = () => {
-    if (done.current || !bestRef.current) return;
-    done.current = true;
-    const { lat: bestLat, lon: bestLon } = bestRef.current;
-    const target = offsetCenterLatLng(map, bestLat, bestLon, RECENTER_ZOOM, dotOffsetPx);
-    map.flyTo(target, RECENTER_ZOOM, { duration: 0.6 });
-  };
+function FollowLocationUntilInteraction({ lat, lon, dotOffsetPx }: { lat: number; lon: number; dotOffsetPx: number }) {
+  const interactedRef = useRef(false);
+  const map = useMapEvents({
+    dragstart: () => {
+      interactedRef.current = true;
+    },
+  });
 
   useEffect(() => {
-    if (done.current) return;
-    if (startRef.current === null) startRef.current = Date.now();
-    if (!bestRef.current || accuracy === null || accuracy < bestRef.current.accuracy) {
-      bestRef.current = { lat, lon, accuracy: accuracy ?? Infinity };
-    }
-    if (accuracy !== null && accuracy <= RECENTER_GOOD_ACCURACY_M) {
-      flyToBest();
-      return;
-    }
-    const elapsed = Date.now() - startRef.current;
-    if (elapsed >= RECENTER_MAX_WAIT_MS) {
-      flyToBest();
-      return;
-    }
-    const timer = setTimeout(flyToBest, RECENTER_MAX_WAIT_MS - elapsed);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, lat, lon, accuracy]);
+    if (interactedRef.current) return;
+    const target = offsetCenterLatLng(map, lat, lon, RECENTER_ZOOM, dotOffsetPx);
+    map.flyTo(target, RECENTER_ZOOM, { duration: 0.6 });
+  }, [map, lat, lon, dotOffsetPx]);
 
   return null;
 }
@@ -248,7 +211,7 @@ export function StationMap({
   stations: NearbyStation[];
   focusedId: string | null;
   onFocusStation: (id: string) => void;
-  userLocation: { lat: number; lon: number; accuracy: number | null } | null;
+  userLocation: { lat: number; lon: number } | null;
   /** Height (px) of UI overlaying the bottom of the map, e.g. the arrivals sheet. */
   obstructedBottomPx?: number;
   /** Called with the coordinate under the dot whenever the map pans or flies. */
@@ -274,12 +237,7 @@ export function StationMap({
         {lineShapes && <GeoJSON data={lineShapes} style={lineShapeStyle} />}
         {userLocation && (
           <>
-            <RecenterOnce
-              lat={userLocation.lat}
-              lon={userLocation.lon}
-              accuracy={userLocation.accuracy}
-              dotOffsetPx={dotOffsetPx}
-            />
+            <FollowLocationUntilInteraction lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
             <RecenterButton lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
             {(onDotLocationChange || onDotLocationSettled) && (
               <TrackDotLocation
