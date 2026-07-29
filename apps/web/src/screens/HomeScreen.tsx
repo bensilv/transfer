@@ -82,7 +82,7 @@ export function HomeScreen({
         stations={stations}
         focusedId={activeFocusId}
         onFocusStation={onFocusStation}
-        userLocation={geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null}
+        userLocation={geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon, accuracy: geo.accuracy } : null}
         obstructedBottomPx={sheetHeightPx}
         onDotLocationChange={setDotLocation}
         onDotLocationSettled={setFetchLocation}
