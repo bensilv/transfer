@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { STATIONS } from '../data/stations.js';
+import { STATIONS, stationById } from '../data/stations.js';
 import { haversineMeters } from '../data/geo.js';
 import { LINE_COLORS, textColorFor } from '../data/lines.js';
 import { getRealtimeProvider } from '../realtime/provider.js';
@@ -62,9 +62,11 @@ router.get('/stations/nearby', async (req, res) => {
 
   const { stations: arrivalsByStation, status } = await getRealtimeProvider().getNearbyArrivals(direction, nearest);
   const arrivalsById = new Map(arrivalsByStation.map((s) => [s.stationId, s.arrivalsByLine]));
+  const directionLabelsById = new Map(arrivalsByStation.map((s) => [s.stationId, s.directionLabelsByLine]));
 
   const stations = nearest.map((s) => {
     const arrivalsByLine = arrivalsById.get(s.id) ?? {};
+    const directionLabelsByLine = directionLabelsById.get(s.id) ?? {};
     return {
       id: s.id,
       name: s.name,
@@ -74,7 +76,12 @@ router.get('/stations/nearby', async (req, res) => {
         line,
         color: LINE_COLORS[line],
         textColor: textColorFor(line),
-        arrivals: (arrivalsByLine[line] ?? []).map((a) => ({ tripId: a.tripId, arrivalMs: a.arrivalMs })),
+        arrivals: (arrivalsByLine[line] ?? []).map((a) => ({
+          tripId: a.tripId,
+          arrivalMs: a.arrivalMs,
+          terminalName: a.terminalStationId ? stationById(a.terminalStationId)?.name ?? null : null,
+        })),
+        directionLabels: directionLabelsByLine[line] ?? { uptown: 'Uptown', downtown: 'Downtown' },
       })),
     };
   });
@@ -95,7 +102,7 @@ router.get('/journey', async (req, res) => {
     return;
   }
 
-  const { stops, status } = await getRealtimeProvider().getJourney({
+  const { stops, status, directionLabel } = await getRealtimeProvider().getJourney({
     tripId,
     line,
     direction,
@@ -111,6 +118,7 @@ router.get('/journey', async (req, res) => {
     lineColor: LINE_COLORS[line],
     lineTextColor: textColorFor(line),
     direction,
+    directionLabel,
     stops: stops.map((s) => ({
       stationId: s.stationId,
       name: s.name,
@@ -122,6 +130,7 @@ router.get('/journey', async (req, res) => {
         direction: t.direction,
         arrivalMs: t.arrivalMs,
         tripId: t.tripId,
+        directionLabels: t.directionLabels,
       })),
     })),
   });

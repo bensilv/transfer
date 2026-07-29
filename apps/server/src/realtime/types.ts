@@ -9,6 +9,16 @@ export interface Arrival {
   direction: Direction;
   /** Predicted arrival time, epoch milliseconds. */
   arrivalMs: number;
+  /** This trip's actual final stop in the current feed decode — null if unresolvable to one of our stations. */
+  terminalStationId: string | null;
+  /** This trip's very next stop after the arrival's station — null if it's the last stop, or unresolvable. */
+  nextStationId: string | null;
+}
+
+/** Human-facing label for each of the two directions, computed live (see data/directionLabel.ts) instead of a fixed "Uptown"/"Downtown". */
+export interface DirectionLabels {
+  uptown: string;
+  downtown: string;
 }
 
 export interface ProviderStatus {
@@ -23,6 +33,8 @@ export interface TransferArrival {
   arrivalMs: number | null;
   /** The connecting trip's id, needed if the rider previews/boards this transfer. Null alongside a null arrivalMs. */
   tripId: string | null;
+  /** Live label for both directions of this connecting line at this stop. */
+  directionLabels: DirectionLabels;
 }
 
 export interface JourneyStop {
@@ -36,6 +48,8 @@ export interface JourneyStop {
 export interface NearbyStationArrivals {
   stationId: string;
   arrivalsByLine: Record<string, Arrival[]>;
+  /** Live label for both directions of each line served here. */
+  directionLabelsByLine: Record<string, DirectionLabels>;
 }
 
 /**
@@ -63,5 +77,5 @@ export interface RealtimeProvider {
     transferDirection: Direction;
     boardedStationId: string;
     boardedArrivalMs: number;
-  }): Promise<{ stops: JourneyStop[]; status: ProviderStatus }>;
+  }): Promise<{ stops: JourneyStop[]; status: ProviderStatus; directionLabel: string }>;
 }

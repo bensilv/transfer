@@ -6,6 +6,7 @@ import { useNowTick } from '../hooks/useNowTick';
 import { formatMinutesAway } from '../format';
 import { haversineMeters } from '../geo';
 import { StationMap } from '../components/StationMap';
+import { pickDirectionLabels } from '../directionLabels';
 import type { ActiveTrip, Direction, NearbyStation } from '../types';
 
 export function HomeScreen({
@@ -65,6 +66,7 @@ export function HomeScreen({
     : unsortedStations;
   const activeFocusId = focusedStationId ?? stations[0]?.id ?? null;
   const focused = stations.find((s) => s.id === activeFocusId) ?? null;
+  const { toggle: toggleLabels } = pickDirectionLabels(focused?.lines ?? []);
 
   const sheetRef = useRef<HTMLDivElement>(null);
   const [sheetHeightPx, setSheetHeightPx] = useState(0);
@@ -119,7 +121,7 @@ export function HomeScreen({
                     color: direction === 'downtown' ? '#1a1a1a' : '#8a8a90',
                   }}
                 >
-                  Downtown
+                  {toggleLabels.downtown}
                 </button>
                 <button
                   onClick={() => onSetDirection('uptown')}
@@ -129,7 +131,7 @@ export function HomeScreen({
                     color: direction === 'uptown' ? '#1a1a1a' : '#8a8a90',
                   }}
                 >
-                  Uptown
+                  {toggleLabels.uptown}
                 </button>
               </div>
             </div>
@@ -156,12 +158,22 @@ export function HomeScreen({
                           onSelectArrival({ tripId: a.tripId, line: ln.line, direction, boardedStationId: focused.id, boardedArrivalMs: a.arrivalMs })
                         }
                         style={{
-                          fontSize: 16, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: '#eef1ff',
-                          color: offline ? '#9a9aa0' : '#1a1a1a', fontStyle: offline ? 'italic' : 'normal',
+                          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
+                          padding: '6px 13px', borderRadius: 9, background: '#eef1ff',
                           border: 'none', whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
                         }}
                       >
-                        {formatMinutesAway(a.arrivalMs, now, offline)}
+                        <span
+                          style={{
+                            fontSize: 16, fontWeight: 800, lineHeight: 1.2,
+                            color: offline ? '#9a9aa0' : '#1a1a1a', fontStyle: offline ? 'italic' : 'normal',
+                          }}
+                        >
+                          {formatMinutesAway(a.arrivalMs, now, offline)}
+                        </span>
+                        {a.terminalName && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#8a8a90', lineHeight: 1.2 }}>{a.terminalName}</span>
+                        )}
                       </button>
                     ))}
                   </div>

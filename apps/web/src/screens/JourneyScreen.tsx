@@ -4,6 +4,7 @@ import { usePolledData } from '../hooks/usePolledData';
 import { useNowTick } from '../hooks/useNowTick';
 import { formatClock, formatMinutesAway, formatUpdatedAgo } from '../format';
 import { LINE_COLORS, textColorFor } from '../lines';
+import { pickDirectionLabels } from '../directionLabels';
 import type { ActiveTrip, Direction } from '../types';
 
 export function JourneyScreen({
@@ -64,6 +65,9 @@ export function JourneyScreen({
   const displayLineColor = LINE_COLORS[displayed.line] ?? '#0039A6';
   const displayLineTextColor = textColorFor(displayed.line);
   const stops = data?.stops ?? [];
+  const headerDirectionLabel = data?.directionLabel ?? (displayed.direction === 'uptown' ? 'Uptown' : 'Downtown');
+  const allTransfers = stops.flatMap((sp) => sp.transfers);
+  const { toggle: transferToggleLabels, qualifierFor: transferQualifierFor } = pickDirectionLabels(allTransfers);
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -83,7 +87,7 @@ export function JourneyScreen({
             >
               {displayed.line}
             </span>
-            <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{displayed.direction === 'uptown' ? 'Uptown' : 'Downtown'}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{headerDirectionLabel}</span>
           </div>
           <div style={{ width: 32 }} />
         </div>
@@ -98,7 +102,7 @@ export function JourneyScreen({
                 color: transferDirection === 'downtown' ? '#1a1a1a' : '#8a8a90',
               }}
             >
-              Downtown
+              {transferToggleLabels.downtown}
             </button>
             <button
               onClick={() => setTransferDirection('uptown')}
@@ -108,7 +112,7 @@ export function JourneyScreen({
                 color: transferDirection === 'uptown' ? '#1a1a1a' : '#8a8a90',
               }}
             >
-              Uptown
+              {transferToggleLabels.uptown}
             </button>
           </div>
         </div>
@@ -144,6 +148,7 @@ export function JourneyScreen({
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {sp.transfers.map((tr) => {
                       const noData = tr.arrivalMs === null || !tr.tripId;
+                      const qualifier = transferQualifierFor(tr, transferDirection);
                       return (
                         <button
                           key={tr.line}
@@ -156,14 +161,19 @@ export function JourneyScreen({
                           <span style={{ width: 22, height: 22, borderRadius: '50%', background: tr.color, color: tr.textColor, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             {tr.line}
                           </span>
-                          <span
-                            style={{
-                              fontSize: 13, fontWeight: 800,
-                              color: noData ? '#b0b0b6' : offline ? '#9a9aa0' : '#1a1a1a',
-                              fontStyle: !noData && offline ? 'italic' : 'normal',
-                            }}
-                          >
-                            {noData ? 'NO DATA' : formatMinutesAway(tr.arrivalMs!, sp.arrivalMs, offline, '0 min')}
+                          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
+                            <span
+                              style={{
+                                fontSize: 13, fontWeight: 800,
+                                color: noData ? '#b0b0b6' : offline ? '#9a9aa0' : '#1a1a1a',
+                                fontStyle: !noData && offline ? 'italic' : 'normal',
+                              }}
+                            >
+                              {noData ? 'NO DATA' : formatMinutesAway(tr.arrivalMs!, sp.arrivalMs, offline, '0 min')}
+                            </span>
+                            {qualifier && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#9a9aa0' }}>{qualifier}</span>
+                            )}
                           </span>
                         </button>
                       );

@@ -23,6 +23,7 @@ interface SocrataRow {
   daytime_routes: string;
   latitude: string;
   longitude: string;
+  borough: string;
 }
 
 interface Station {
@@ -32,6 +33,8 @@ interface Station {
   lon: number;
   lines: string[];
   gtfsStopIds: string[];
+  /** MTA's borough code: M, Bk, Bx, Q, or SI. */
+  borough: string;
 }
 
 function toStation(row: SocrataRow): Station | null {
@@ -39,10 +42,10 @@ function toStation(row: SocrataRow): Station | null {
   const lon = Number(row.longitude);
   const lines = row.daytime_routes.trim().split(/\s+/).filter(Boolean);
   const gtfsStopIds = row.gtfs_stop_ids.split(';').map((s) => s.trim()).filter(Boolean);
-  if (!row.complex_id || !Number.isFinite(lat) || !Number.isFinite(lon) || lines.length === 0 || gtfsStopIds.length === 0) {
+  if (!row.complex_id || !Number.isFinite(lat) || !Number.isFinite(lon) || lines.length === 0 || gtfsStopIds.length === 0 || !row.borough) {
     return null;
   }
-  return { id: row.complex_id, name: row.stop_name, lat, lon, lines, gtfsStopIds };
+  return { id: row.complex_id, name: row.stop_name, lat, lon, lines, gtfsStopIds, borough: row.borough };
 }
 
 async function main() {
@@ -63,7 +66,7 @@ async function main() {
   const body = stations
     .map(
       (s) =>
-        `  { id: '${s.id}', name: ${JSON.stringify(s.name)}, lat: ${s.lat}, lon: ${s.lon}, lines: ${JSON.stringify(s.lines)}, gtfsStopIds: ${JSON.stringify(s.gtfsStopIds)} },`,
+        `  { id: '${s.id}', name: ${JSON.stringify(s.name)}, lat: ${s.lat}, lon: ${s.lon}, lines: ${JSON.stringify(s.lines)}, gtfsStopIds: ${JSON.stringify(s.gtfsStopIds)}, borough: ${JSON.stringify(s.borough)} },`,
     )
     .join('\n');
 
@@ -83,6 +86,8 @@ export interface Station {
   lines: string[];
   /** Real MTA GTFS parent stop_id(s) (no N/S suffix) for this complex, straight from MTA's dataset. */
   gtfsStopIds: string[];
+  /** MTA's borough code: M, Bk, Bx, Q, or SI. */
+  borough: string;
 }
 
 export const STATIONS: Station[] = [

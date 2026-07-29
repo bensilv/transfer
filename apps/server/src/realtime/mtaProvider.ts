@@ -1,10 +1,19 @@
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import type { transit_realtime } from 'gtfs-realtime-bindings';
-import { STATIONS, connectingLines } from '../data/stations.js';
+import { STATIONS, connectingLines, stationById } from '../data/stations.js';
 import type { Station } from '../data/stations.js';
 import { FEED_GROUP_FOR_ROUTE } from '../data/lines.js';
 import { getStationGtfsIds } from '../data/gtfsStatic.js';
-import type { Arrival, Direction, JourneyStop, NearbyStationArrivals, ProviderStatus, RealtimeProvider } from './types.js';
+import { directionLabel } from '../data/directionLabel.js';
+import type {
+  Arrival,
+  Direction,
+  DirectionLabels,
+  JourneyStop,
+  NearbyStationArrivals,
+  ProviderStatus,
+  RealtimeProvider,
+} from './types.js';
 
 // MTA's public GTFS-RT protobuf feeds. No API key required (MTA opened these
 // up in 2019). One feed per line group, not one per route.
@@ -124,11 +133,26 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
       if (seq.length === 0) continue;
       this.tripIndex.set(tripId, seq);
 
-      for (const stop of seq) {
+      // This trip's actual final stop in today's decode — reflects reroutes/
+      // short-turns automatically, since it's read straight off the live feed
+      // rather than a scheduled terminal.
+      const terminalStationId = this.stationByGtfsId.get(baseStopId(seq[seq.length - 1].gtfsStopId)) ?? null;
+
+      for (let i = 0; i < seq.length; i++) {
+        const stop = seq[i];
         const stationId = this.stationByGtfsId.get(baseStopId(stop.gtfsStopId));
         if (!stationId) continue;
+        const nextStop = seq[i + 1];
+        const nextStationId = nextStop ? this.stationByGtfsId.get(baseStopId(nextStop.gtfsStopId)) ?? null : null;
         const key = `${stationId}:${stop.line}:${stop.direction}`;
-        const arrival: Arrival = { tripId: stop.tripId, line: stop.line, direction: stop.direction, arrivalMs: stop.arrivalMs };
+        const arrival: Arrival = {
+          tripId: stop.tripId,
+          line: stop.line,
+          direction: stop.direction,
+          arrivalMs: stop.arrivalMs,
+          terminalStationId,
+          nextStationId,
+        };
         const existing = this.arrivalsIndex.get(key) ?? [];
         const dedup = existing.filter((a) => a.tripId !== arrival.tripId);
         dedup.push(arrival);
@@ -140,6 +164,33 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
 
   private statusFrom(failures: string[]): ProviderStatus {
     return { online: failures.length === 0, lastErrorMessage: failures.length ? failures.join('; ') : null };
+  }
+
+  /**
+   * Human label for one direction bucket at a station, derived from the
+   * soonest live arrival there (its actual next stop + actual terminal) —
+   * falls back to plain "Uptown"/"Downtown" text when there's no live trip
+   * to derive it from yet (e.g. a long overnight gap).
+   */
+  private labelFor(
+    stationId: string,
+    dir: Direction,
+    ids?: { terminalStationId: string | null; nextStationId: string | null },
+  ): string {
+    const from = stationById(stationId);
+    if (!from) return dir === 'uptown' ? 'Uptown' : 'Downtown';
+    const bearing = ids?.nextStationId ? stationById(ids.nextStationId) ?? null : null;
+    const terminal = ids?.terminalStationId ? stationById(ids.terminalStationId) ?? null : null;
+    return directionLabel(from, bearing, terminal, dir);
+  }
+
+  private directionLabelsFor(stationId: string, line: string): DirectionLabels {
+    const uptownSoonest = this.arrivalsIndex.get(`${stationId}:${line}:uptown`)?.[0];
+    const downtownSoonest = this.arrivalsIndex.get(`${stationId}:${line}:downtown`)?.[0];
+    return {
+      uptown: this.labelFor(stationId, 'uptown', uptownSoonest),
+      downtown: this.labelFor(stationId, 'downtown', downtownSoonest),
+    };
   }
 
   async getNearbyArrivals(
@@ -158,6 +209,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
           (this.arrivalsIndex.get(`${st.id}:${line}:${direction}`) ?? []).filter((a) => a.arrivalMs >= now),
         ]),
       ),
+      directionLabelsByLine: Object.fromEntries(st.lines.map((line) => [line, this.directionLabelsFor(st.id, line)])),
     }));
 
     return { stations, status: this.statusFrom(failures) };
@@ -170,7 +222,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     transferDirection: Direction;
     boardedStationId: string;
     boardedArrivalMs: number;
-  }): Promise<{ stops: JourneyStop[]; status: ProviderStatus }> {
+  }): Promise<{ stops: JourneyStop[]; status: ProviderStatus; directionLabel: string }> {
     await this.ensureStationMapping();
 
     const primaryGroup = FEED_GROUP_FOR_ROUTE[params.line];
@@ -178,7 +230,11 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
 
     const seq = this.tripIndex.get(params.tripId);
     if (!seq) {
-      return { stops: [], status: this.statusFrom([...failures, `trip ${params.tripId} not present in the current feed`]) };
+      return {
+        stops: [],
+        status: this.statusFrom([...failures, `trip ${params.tripId} not present in the current feed`]),
+        directionLabel: this.labelFor(params.boardedStationId, params.direction),
+      };
     }
 
     // A station id can map to several real stop_ids (e.g. two line groups in
@@ -189,6 +245,18 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     );
     const boardedIdx = seq.findIndex((s) => boardedRealIds.has(baseStopId(s.gtfsStopId)));
     const rest = boardedIdx === -1 ? seq : seq.slice(boardedIdx + 1);
+
+    // Header label for the boarded/previewed trip itself: its actual next
+    // stop from here decides Uptown/Downtown vs. crosstown, its actual final
+    // stop this decode supplies the place name — same live derivation as
+    // every other label, just anchored to this one specific trip.
+    const bearingEntry = boardedIdx !== -1 ? seq[boardedIdx + 1] : seq[0];
+    const bearingStationId = bearingEntry ? this.stationByGtfsId.get(baseStopId(bearingEntry.gtfsStopId)) ?? null : null;
+    const terminalStationId = this.stationByGtfsId.get(baseStopId(seq[seq.length - 1].gtfsStopId)) ?? null;
+    const headerDirectionLabel = this.labelFor(params.boardedStationId, params.direction, {
+      terminalStationId,
+      nextStationId: bearingStationId,
+    });
 
     // Figure out which additional feeds we need for connecting lines at the
     // stops ahead, and fetch only the ones the primary-group refresh above
@@ -209,17 +277,30 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
 
     const stops: JourneyStop[] = knownStops.map(({ stop, stationId }) => {
       const station = STATIONS.find((s) => s.id === stationId)!;
-      const transfers = connectingLines(stationId, params.line).map((tLine) => {
-        const candidates = (this.arrivalsIndex.get(`${stationId}:${tLine}:${params.transferDirection}`) ?? []).filter(
+      const pickBest = (tLine: string, dir: Direction): Arrival | undefined => {
+        const candidates = (this.arrivalsIndex.get(`${stationId}:${tLine}:${dir}`) ?? []).filter(
           (a) => a.arrivalMs >= stop.arrivalMs,
         );
         candidates.sort((a, b) => a.arrivalMs - b.arrivalMs);
-        const best = candidates[0];
-        return { line: tLine, direction: best?.direction ?? params.transferDirection, arrivalMs: best?.arrivalMs ?? null, tripId: best?.tripId ?? null };
+        return candidates[0];
+      };
+      const transfers = connectingLines(stationId, params.line).map((tLine) => {
+        const best = pickBest(tLine, params.transferDirection);
+        const directionLabels: DirectionLabels = {
+          uptown: this.labelFor(stationId, 'uptown', pickBest(tLine, 'uptown')),
+          downtown: this.labelFor(stationId, 'downtown', pickBest(tLine, 'downtown')),
+        };
+        return {
+          line: tLine,
+          direction: best?.direction ?? params.transferDirection,
+          arrivalMs: best?.arrivalMs ?? null,
+          tripId: best?.tripId ?? null,
+          directionLabels,
+        };
       });
       return { stationId, name: station.name, arrivalMs: stop.arrivalMs, transfers };
     });
 
-    return { stops, status: this.statusFrom([...failures, ...moreFailures]) };
+    return { stops, status: this.statusFrom([...failures, ...moreFailures]), directionLabel: headerDirectionLabel };
   }
 }

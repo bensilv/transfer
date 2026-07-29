@@ -1,5 +1,11 @@
 export type Direction = 'downtown' | 'uptown';
 
+/** Human-facing label for each direction, computed live off the real-time feed instead of a fixed "Uptown"/"Downtown". */
+export interface DirectionLabels {
+  uptown: string;
+  downtown: string;
+}
+
 export interface ProviderStatus {
   online: boolean;
   lastErrorMessage: string | null;
@@ -8,6 +14,8 @@ export interface ProviderStatus {
 export interface ArrivalDto {
   tripId: string;
   arrivalMs: number;
+  /** This specific train's actual current terminal — same-direction trains on a branching line (e.g. the A to Far Rockaway vs. Ozone Park) can differ. Null if not yet resolvable. */
+  terminalName: string | null;
 }
 
 export interface NearbyLine {
@@ -15,6 +23,7 @@ export interface NearbyLine {
   color: string;
   textColor: string;
   arrivals: ArrivalDto[];
+  directionLabels: DirectionLabels;
 }
 
 export interface NearbyStation {
@@ -39,6 +48,7 @@ export interface TransferDto {
   direction: Direction;
   arrivalMs: number | null;
   tripId: string | null;
+  directionLabels: DirectionLabels;
 }
 
 export interface JourneyStopDto {
@@ -55,6 +65,7 @@ export interface JourneyResponse {
   lineColor: string;
   lineTextColor: string;
   direction: Direction;
+  directionLabel: string;
   stops: JourneyStopDto[];
 }
 
