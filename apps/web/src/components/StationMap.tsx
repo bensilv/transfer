@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Circle, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, GeoJSON, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useLineShapes } from '../hooks/useLineShapes';
+import { LINE_COLORS } from '../lines';
 import type { NearbyStation } from '../types';
 
 const DEFAULT_CENTER: [number, number] = [40.7318, -74.0002]; // W 4 St - roughly the middle of our coverage area
@@ -10,6 +12,27 @@ const RECENTER_ZOOM = 15;
 // map features that grow/shrink with zoom instead of fixed-size UI pins.
 const STATION_RADIUS_M = 12;
 const STATION_RADIUS_FOCUSED_M = 18;
+// Caps how often onDotLocationChange fires during a drag/fly gesture. The
+// underlying 'move' event fires on essentially every rendered frame (~60/s),
+// which is more often than the nearest-station leader needs to be
+// recomputed — in a dense cluster of stations that leader can otherwise flip
+// on nearly every frame, reading as a flickering selection. This keeps the
+// map itself buttery (throttling is on the callback, not the pan/zoom) while
+// visibly slowing how often the rest of the UI reacts.
+const DOT_LOCATION_THROTTLE_MS = 150;
+const LINE_SHAPE_WEIGHT = 3;
+const LINE_SHAPE_OPACITY = 0.75;
+const LINE_SHAPE_FALLBACK_COLOR = '#888';
+
+function lineShapeStyle(feature?: GeoJSON.Feature): L.PathOptions {
+  const route = (feature?.properties?.route as string | undefined) ?? '';
+  return {
+    color: LINE_COLORS[route] ?? LINE_SHAPE_FALLBACK_COLOR,
+    weight: LINE_SHAPE_WEIGHT,
+    opacity: LINE_SHAPE_OPACITY,
+    lineCap: 'round',
+  };
+}
 
 /**
  * The blue dot sits above true viewport center (see CenterUserDot), so
@@ -46,13 +69,21 @@ function TrackDotLocation({
   onChange: (loc: { lat: number; lon: number }) => void;
   onSettle?: (loc: { lat: number; lon: number }) => void;
 }) {
+  const lastEmitRef = useRef(0);
   const map = useMapEvents({
     move: () => {
+      const now = performance.now();
+      if (now - lastEmitRef.current < DOT_LOCATION_THROTTLE_MS) return;
+      lastEmitRef.current = now;
       const { lat, lng } = dotLatLng(map, dotOffsetPx);
       onChange({ lat, lon: lng });
     },
     moveend: () => {
+      // Flush unconditionally so the final position is never left stale
+      // behind the throttle window once the gesture actually stops.
+      lastEmitRef.current = performance.now();
       const { lat, lng } = dotLatLng(map, dotOffsetPx);
+      onChange({ lat, lon: lng });
       onSettle?.({ lat, lon: lng });
     },
   });
@@ -177,6 +208,7 @@ export function StationMap({
   onDotLocationSettled?: (loc: { lat: number; lon: number }) => void;
 }) {
   const dotOffsetPx = obstructedBottomPx / 2;
+  const lineShapes = useLineShapes();
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
       <MapContainer
@@ -190,6 +222,7 @@ export function StationMap({
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         />
+        {lineShapes && <GeoJSON data={lineShapes} style={lineShapeStyle} />}
         {userLocation && (
           <>
             <RecenterOnce lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
