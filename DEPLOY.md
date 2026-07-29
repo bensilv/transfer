@@ -11,14 +11,13 @@ One Vercel project serves both apps: `apps/web` builds as the static site,
    `apps/web`. `vercel.json` already knows where each app lives.
 3. **Framework Preset**: Vercel should detect "Other" / use `vercel.json`
    as-is. You don't need to set a build/output command manually.
-4. Add an environment variable: `DATA_SOURCE` = `mta` (the default if unset
-   is `mock`, which is safe but only shows generated demo data — not what you
-   want for a real deployment).
-5. Click **Deploy**.
+4. Click **Deploy**. No environment variables are required — `DATA_SOURCE`
+   already defaults to `mta` (real live data) if unset. Only set it to
+   `mock` if you want deterministic demo data instead (e.g. for a preview
+   deploy with no network access to MTA's servers).
 
-That's it — no other environment variables are required. The frontend calls
-its own `/api/*` on the same domain, so there's no separate API URL to
-configure.
+The frontend calls its own `/api/*` on the same domain, so there's no
+separate API URL to configure.
 
 ## After every push to `main`
 
