@@ -9,6 +9,7 @@
     { "src": "/assets/(.*)", "dest": "/apps/web/assets/$1" },
     { "src": "/favicon.svg", "dest": "/apps/web/favicon.svg" },
     { "src": "/icons.svg", "dest": "/apps/web/icons.svg" },
+    { "src": "/subway-lines.geojson", "dest": "/apps/web/subway-lines.geojson" },
     { "src": "/(.*)", "dest": "/apps/web/index.html" }
   ]
 }
