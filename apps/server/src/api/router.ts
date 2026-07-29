@@ -63,16 +63,18 @@ router.get('/stations/nearby', async (req, res) => {
   const { stations: arrivalsByStation, status } = await getRealtimeProvider().getNearbyArrivals(direction, nearest);
   const arrivalsById = new Map(arrivalsByStation.map((s) => [s.stationId, s.arrivalsByLine]));
   const directionLabelsById = new Map(arrivalsByStation.map((s) => [s.stationId, s.directionLabelsByLine]));
+  const linesById = new Map(arrivalsByStation.map((s) => [s.stationId, s.lines]));
 
   const stations = nearest.map((s) => {
     const arrivalsByLine = arrivalsById.get(s.id) ?? {};
     const directionLabelsByLine = directionLabelsById.get(s.id) ?? {};
+    const lines = linesById.get(s.id) ?? s.lines;
     return {
       id: s.id,
       name: s.name,
       lat: s.lat,
       lon: s.lon,
-      lines: s.lines.map((line) => ({
+      lines: lines.map((line) => ({
         line,
         color: LINE_COLORS[line],
         textColor: textColorFor(line),

@@ -47,6 +47,8 @@ export interface JourneyStop {
 
 export interface NearbyStationArrivals {
   stationId: string;
+  /** Every line to show at this station: scheduled service plus anything actually observed running here live (reroutes, service changes). */
+  lines: string[];
   arrivalsByLine: Record<string, Arrival[]>;
   /** Live label for both directions of each line served here. */
   directionLabelsByLine: Record<string, DirectionLabels>;

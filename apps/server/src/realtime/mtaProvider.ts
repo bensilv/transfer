@@ -2,7 +2,7 @@ import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import type { transit_realtime } from 'gtfs-realtime-bindings';
 import { STATIONS, connectingLines, stationById } from '../data/stations.js';
 import type { Station } from '../data/stations.js';
-import { FEED_GROUP_FOR_ROUTE } from '../data/lines.js';
+import { FEED_GROUP_FOR_ROUTE, FEED_GROUPS } from '../data/lines.js';
 import { getStationGtfsIds } from '../data/gtfsStatic.js';
 import { directionLabel } from '../data/directionLabel.js';
 import type {
@@ -28,12 +28,12 @@ const FEED_URL: Record<string, string> = {
   l: 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l',
 };
 
-/** Feed groups covering every line served by `stations`, deduplicated. */
-function neededGroups(stations: Station[]): string[] {
-  return Array.from(
-    new Set(stations.flatMap((s) => s.lines).map((l) => FEED_GROUP_FOR_ROUTE[l]).filter((g): g is string => !!g)),
-  );
-}
+/**
+ * Every route id we know a feed group for. Used to check for live arrivals
+ * beyond a station's scheduled lines — e.g. an A running local overnight
+ * covering C's stops, or any other reroute/service change.
+ */
+const ALL_LINES = Object.keys(FEED_GROUP_FOR_ROUTE);
 
 interface DecodedArrival {
   tripId: string;
@@ -184,6 +184,36 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     return directionLabel(from, bearing, terminal, dir);
   }
 
+  /**
+   * Lines actually observed serving a station right now, in either direction,
+   * per the live feed — regardless of whether they're part of scheduled
+   * service there. This is how a reroute (an A running local overnight over
+   * C's stops, a GO diversion, a short-turn, etc.) surfaces automatically:
+   * the feed already carries those trip updates, decoded and indexed by real
+   * stop match in `ingest`, independent of any station's scheduled lines.
+   */
+  private liveLines(stationId: string): string[] {
+    const now = Date.now();
+    return ALL_LINES.filter((line) =>
+      (['uptown', 'downtown'] as const).some((dir) =>
+        (this.arrivalsIndex.get(`${stationId}:${line}:${dir}`) ?? []).some((a) => a.arrivalMs >= now),
+      ),
+    );
+  }
+
+  /** Every line to show at a station: scheduled service plus anything live. */
+  private effectiveLines(stationId: string): string[] {
+    const scheduled = stationById(stationId)?.lines ?? [];
+    return Array.from(new Set([...scheduled, ...this.liveLines(stationId)]));
+  }
+
+  /** Every other line reachable at a station right now: scheduled transfers plus anything live. */
+  private effectiveConnectingLines(stationId: string, line: string): string[] {
+    const scheduled = connectingLines(stationId, line);
+    const live = this.liveLines(stationId).filter((l) => l !== line);
+    return Array.from(new Set([...scheduled, ...live]));
+  }
+
   private directionLabelsFor(stationId: string, line: string): DirectionLabels {
     const uptownSoonest = this.arrivalsIndex.get(`${stationId}:${line}:uptown`)?.[0];
     const downtownSoonest = this.arrivalsIndex.get(`${stationId}:${line}:downtown`)?.[0];
@@ -198,19 +228,27 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     targetStations: Station[],
   ): Promise<{ stations: NearbyStationArrivals[]; status: ProviderStatus }> {
     await this.ensureStationMapping();
-    const failures = await this.refresh(neededGroups(targetStations));
+    // Always fetch every feed group, not just the ones implied by scheduled
+    // service — a reroute can put a train on a station that isn't on its
+    // usual line's feed at all (rare, but the only way to catch it). There
+    // are only 7 groups and they fetch in parallel, so this is cheap.
+    const failures = await this.refresh(FEED_GROUPS);
     const now = Date.now();
 
-    const stations = targetStations.map((st) => ({
-      stationId: st.id,
-      arrivalsByLine: Object.fromEntries(
-        st.lines.map((line) => [
-          line,
-          (this.arrivalsIndex.get(`${st.id}:${line}:${direction}`) ?? []).filter((a) => a.arrivalMs >= now),
-        ]),
-      ),
-      directionLabelsByLine: Object.fromEntries(st.lines.map((line) => [line, this.directionLabelsFor(st.id, line)])),
-    }));
+    const stations = targetStations.map((st) => {
+      const lines = this.effectiveLines(st.id);
+      return {
+        stationId: st.id,
+        lines,
+        arrivalsByLine: Object.fromEntries(
+          lines.map((line) => [
+            line,
+            (this.arrivalsIndex.get(`${st.id}:${line}:${direction}`) ?? []).filter((a) => a.arrivalMs >= now),
+          ]),
+        ),
+        directionLabelsByLine: Object.fromEntries(lines.map((line) => [line, this.directionLabelsFor(st.id, line)])),
+      };
+    });
 
     return { stations, status: this.statusFrom(failures) };
   }
@@ -225,8 +263,10 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
   }): Promise<{ stops: JourneyStop[]; status: ProviderStatus; directionLabel: string }> {
     await this.ensureStationMapping();
 
-    const primaryGroup = FEED_GROUP_FOR_ROUTE[params.line];
-    const failures = primaryGroup ? await this.refresh([primaryGroup]) : [`no feed group known for line ${params.line}`];
+    // Always fetch every feed group — see getNearbyArrivals for why. Here it
+    // also means transfer lines at stops ahead aren't limited to whatever
+    // was reachable from a single primary-group fetch.
+    const failures = await this.refresh(FEED_GROUPS);
 
     const seq = this.tripIndex.get(params.tripId);
     if (!seq) {
@@ -258,22 +298,9 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
       nextStationId: bearingStationId,
     });
 
-    // Figure out which additional feeds we need for connecting lines at the
-    // stops ahead, and fetch only the ones the primary-group refresh above
-    // didn't already cover.
     const knownStops = rest
       .map((stop) => ({ stop, stationId: this.stationByGtfsId.get(baseStopId(stop.gtfsStopId)) }))
       .filter((s): s is { stop: DecodedArrival; stationId: string } => !!s.stationId);
-
-    const extraGroups = Array.from(
-      new Set(
-        knownStops
-          .flatMap(({ stationId }) => connectingLines(stationId, params.line))
-          .map((tLine) => FEED_GROUP_FOR_ROUTE[tLine])
-          .filter((g): g is string => !!g && g !== primaryGroup),
-      ),
-    );
-    const moreFailures = extraGroups.length ? await this.refresh(extraGroups) : [];
 
     const stops: JourneyStop[] = knownStops.map(({ stop, stationId }) => {
       const station = STATIONS.find((s) => s.id === stationId)!;
@@ -284,7 +311,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
         candidates.sort((a, b) => a.arrivalMs - b.arrivalMs);
         return candidates[0];
       };
-      const transfers = connectingLines(stationId, params.line).map((tLine) => {
+      const transfers = this.effectiveConnectingLines(stationId, params.line).map((tLine) => {
         const best = pickBest(tLine, params.transferDirection);
         const directionLabels: DirectionLabels = {
           uptown: this.labelFor(stationId, 'uptown', pickBest(tLine, 'uptown')),
@@ -301,6 +328,6 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
       return { stationId, name: station.name, arrivalMs: stop.arrivalMs, transfers };
     });
 
-    return { stops, status: this.statusFrom([...failures, ...moreFailures]), directionLabel: headerDirectionLabel };
+    return { stops, status: this.statusFrom(failures), directionLabel: headerDirectionLabel };
   }
 }
