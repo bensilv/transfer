@@ -6,7 +6,9 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "apps/server/src/index.ts" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/assets/(.*)", "dest": "/apps/web/assets/$1" },
+    { "src": "/favicon.svg", "dest": "/apps/web/favicon.svg" },
+    { "src": "/icons.svg", "dest": "/apps/web/icons.svg" },
+    { "src": "/(.*)", "dest": "/apps/web/index.html" }
   ]
 }
