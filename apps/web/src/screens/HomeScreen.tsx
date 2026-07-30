@@ -12,12 +12,11 @@ import { BottomSheet, SHEET_HANDLE_HEIGHT_PX } from '../components/BottomSheet';
 import { pickDirectionLabels } from '../directionLabels';
 import type { ActiveTrip, Direction, JourneyLeg, NearbyStation, StationAnchor } from '../types';
 
-// Fraction of the viewport the sheet expands to, capped so it doesn't get
-// absurdly tall on large screens — matches the old fixed-content sheet's
-// rough proportions, just as an explicit drag snap point instead of a
-// content-driven max-height.
-const EXPANDED_SHEET_VH_FRACTION = 0.72;
-const EXPANDED_SHEET_MAX_PX = 620;
+// Ceiling on the expanded snap point — it normally hugs the actual arrivals
+// content (see contentHeightPx below), but a station with many lines is
+// capped here so the sheet never swallows the whole map.
+const EXPANDED_SHEET_VH_FRACTION = 0.6;
+const EXPANDED_SHEET_MAX_PX = 520;
 const SHEET_BOTTOM_SAFE_PADDING = 'max(16px, env(safe-area-inset-bottom))';
 
 export function HomeScreen({
@@ -99,25 +98,26 @@ export function HomeScreen({
     .map((l) => ({ color: LINE_COLORS[l.line] ?? '#888', points: l.routePoints as [number, number][] }));
 
   // Sheet snap points: collapsed shows just the handle and the station strip
-  // (so you can still switch stations with the map full-screen behind it),
-  // expanded shows the full arrivals detail too. Collapsed height is measured
-  // off the actual strip (its content — text length, wrapped line count —
-  // can vary slightly by station), expanded is a fixed proportion of the
-  // viewport since there's no fixed "natural" height once a station has many
-  // lines (the detail panel scrolls internally beyond this cap either way).
+  // (so you can still switch stations with the map full-screen behind it).
+  // Expanded hugs the actual arrivals content for the focused station so a
+  // station with few lines doesn't leave blank space — capped so a station
+  // with many lines doesn't swallow the whole map (it scrolls internally
+  // beyond that cap instead). Both heights are measured off real DOM nodes;
+  // the content height comes from a hidden unclamped clone (see
+  // contentMeasureRef below) since the visible copy is itself flex-sized to
+  // whatever height we pick, which would be circular.
   const stripRef = useRef<HTMLDivElement>(null);
   const [stripHeightPx, setStripHeightPx] = useState(96);
   useEffect(() => {
     const el = stripRef.current;
     if (!el) return;
     let rafId = 0;
-    const observer = new ResizeObserver(([entry]) => {
-      // rAF defers the setState past the current render cycle — avoids a
-      // "Cannot update HomeScreen while rendering BottomSheet" warning in
-      // React strict-mode caused by the ResizeObserver firing synchronously
-      // during the DOM manipulation of strict-mode's unmount/remount cycle.
+    const observer = new ResizeObserver(() => {
+      // Read getBoundingClientRect (border-box, includes padding) rather than
+      // entry.contentRect (content-box, excludes it) — we need the actual
+      // space this element occupies when stacked with its siblings.
       cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => setStripHeightPx(entry.contentRect.height));
+      rafId = requestAnimationFrame(() => setStripHeightPx(el.getBoundingClientRect().height));
     });
     observer.observe(el);
     return () => {
@@ -125,15 +125,109 @@ export function HomeScreen({
       cancelAnimationFrame(rafId);
     };
   }, []);
+
+  const contentMeasureRef = useRef<HTMLDivElement>(null);
+  const [contentHeightPx, setContentHeightPx] = useState(220);
+  useEffect(() => {
+    const el = contentMeasureRef.current;
+    if (!el) return;
+    let rafId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => setContentHeightPx(el.getBoundingClientRect().height));
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
+  }, [focused]);
+
   const collapsedHeight = SHEET_HANDLE_HEIGHT_PX + stripHeightPx;
+  const naturalExpandedHeight = SHEET_HANDLE_HEIGHT_PX + contentHeightPx + stripHeightPx;
   const expandedHeight = Math.max(
     collapsedHeight,
-    Math.min(viewportHeight * EXPANDED_SHEET_VH_FRACTION, EXPANDED_SHEET_MAX_PX),
+    Math.min(naturalExpandedHeight, viewportHeight * EXPANDED_SHEET_VH_FRACTION, EXPANDED_SHEET_MAX_PX),
   );
   const snapPoints = [collapsedHeight, expandedHeight];
   const [activeSnap, setActiveSnap] = useState(1);
   const [sheetHeightPx, setSheetHeightPx] = useState(expandedHeight);
   const expanded = activeSnap === 1;
+
+  const arrivalsContent = focused && (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: '#1a1a1a' }}>{focused.name}</div>
+        <div style={{ display: 'flex', background: '#f1f1f3', borderRadius: 10, padding: 2 }}>
+          <button
+            onClick={() => onSetDirection('downtown')}
+            style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: direction === 'downtown' ? '#fff' : 'transparent',
+              color: direction === 'downtown' ? '#1a1a1a' : '#8a8a90',
+            }}
+          >
+            {toggleLabels.downtown}
+          </button>
+          <button
+            onClick={() => onSetDirection('uptown')}
+            style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: direction === 'uptown' ? '#fff' : 'transparent',
+              color: direction === 'uptown' ? '#1a1a1a' : '#8a8a90',
+            }}
+          >
+            {toggleLabels.uptown}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {focused.lines.map((ln) => (
+          <div key={ln.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              style={{
+                width: 26, height: 26, borderRadius: '50%', background: ln.color, color: ln.textColor,
+                fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}
+            >
+              {ln.line}
+            </span>
+            <div data-noscroll style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, flex: 1, minWidth: 0 }}>
+              {ln.arrivals.length === 0 && !offline && (
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#9a9aa0', padding: '7px 0' }}>No upcoming trains</span>
+              )}
+              {ln.arrivals.map((a) => (
+                <button
+                  key={a.tripId}
+                  onClick={() =>
+                    onSelectArrival({ tripId: a.tripId, line: ln.line, direction, boardedStationId: focused.id, boardedArrivalMs: a.arrivalMs })
+                  }
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
+                    padding: '6px 13px', borderRadius: 9, background: '#eef1ff',
+                    border: 'none', whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 16, fontWeight: 800, lineHeight: 1.2,
+                      color: offline ? '#9a9aa0' : '#1a1a1a', fontStyle: offline ? 'italic' : 'normal',
+                    }}
+                  >
+                    {formatMinutesAway(a.arrivalMs, now, offline)}
+                  </span>
+                  {a.terminalName && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#8a8a90', lineHeight: 1.2 }}>{a.terminalName}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -176,76 +270,21 @@ export function HomeScreen({
       >
         {expanded && focused && (
           <div data-sheet-scroll style={{ padding: '2px 18px 12px', flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, color: '#1a1a1a' }}>{focused.name}</div>
-              <div style={{ display: 'flex', background: '#f1f1f3', borderRadius: 10, padding: 2 }}>
-                <button
-                  onClick={() => onSetDirection('downtown')}
-                  style={{
-                    padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    background: direction === 'downtown' ? '#fff' : 'transparent',
-                    color: direction === 'downtown' ? '#1a1a1a' : '#8a8a90',
-                  }}
-                >
-                  {toggleLabels.downtown}
-                </button>
-                <button
-                  onClick={() => onSetDirection('uptown')}
-                  style={{
-                    padding: '6px 12px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    background: direction === 'uptown' ? '#fff' : 'transparent',
-                    color: direction === 'uptown' ? '#1a1a1a' : '#8a8a90',
-                  }}
-                >
-                  {toggleLabels.uptown}
-                </button>
-              </div>
-            </div>
+            {arrivalsContent}
+          </div>
+        )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {focused.lines.map((ln) => (
-                <div key={ln.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span
-                    style={{
-                      width: 26, height: 26, borderRadius: '50%', background: ln.color, color: ln.textColor,
-                      fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}
-                  >
-                    {ln.line}
-                  </span>
-                  <div data-noscroll style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, flex: 1, minWidth: 0 }}>
-                    {ln.arrivals.length === 0 && !offline && (
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#9a9aa0', padding: '7px 0' }}>No upcoming trains</span>
-                    )}
-                    {ln.arrivals.map((a) => (
-                      <button
-                        key={a.tripId}
-                        onClick={() =>
-                          onSelectArrival({ tripId: a.tripId, line: ln.line, direction, boardedStationId: focused.id, boardedArrivalMs: a.arrivalMs })
-                        }
-                        style={{
-                          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
-                          padding: '6px 13px', borderRadius: 9, background: '#eef1ff',
-                          border: 'none', whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 16, fontWeight: 800, lineHeight: 1.2,
-                            color: offline ? '#9a9aa0' : '#1a1a1a', fontStyle: offline ? 'italic' : 'normal',
-                          }}
-                        >
-                          {formatMinutesAway(a.arrivalMs, now, offline)}
-                        </span>
-                        {a.terminalName && (
-                          <span style={{ fontSize: 10, fontWeight: 700, color: '#8a8a90', lineHeight: 1.2 }}>{a.terminalName}</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* Invisible clone of the arrivals content, laid out at its natural
+           (unclamped) height purely so contentHeightPx can size the expanded
+           snap point to fit — the visible copy above is itself flex-sized to
+           whatever height we pick, so it can't be measured for that. */}
+        {focused && (
+          <div
+            ref={contentMeasureRef}
+            aria-hidden
+            style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', width: '100%', padding: '2px 18px 12px' }}
+          >
+            {arrivalsContent}
           </div>
         )}
 
