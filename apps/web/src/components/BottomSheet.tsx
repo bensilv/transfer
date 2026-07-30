@@ -339,6 +339,7 @@ export function BottomSheet({
     <div
       ref={rootRef}
       className={className}
+      data-sheet-root
       style={{
         // Spread first: layout/positioning below is load-bearing for the drag
         // mechanics, so a caller's `style` (background, borderRadius, shadow)
@@ -354,9 +355,12 @@ export function BottomSheet({
         flexDirection: 'column',
         // Keeps content clipped to the rounded top corners while it resizes.
         overflow: 'hidden',
-        // Set unconditionally, not just while dragging: touch-action is latched
-        // when the gesture *starts*, so flipping it once a drag is underway (as
-        // this used to) is always too late to stop the browser panning.
+        // Only rules out double-tap zoom. The panning rules that actually
+        // matter are per-child, in index.css — see [data-sheet-root] there for
+        // why they can't live on this element. Either way they're set up front,
+        // not once a drag is underway: touch-action is latched when the gesture
+        // *starts*, so flipping it mid-drag (as this used to) is always too
+        // late to stop the browser taking it.
         touchAction: 'manipulation',
         userSelect: 'none',
         WebkitUserSelect: 'none',

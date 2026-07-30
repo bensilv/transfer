@@ -20,11 +20,40 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Taking the body out of flow as well is what actually stops mobile Safari
+   rubber-banding the document: overflow:hidden alone doesn't, and every such
+   bounce drags the browser chrome up and down with it. */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
 /* Pinned to the viewport rather than sized off <html>, so the app can't end up
    taller than the visible area on mobile when the browser chrome collapses. */
 #root {
   position: fixed;
   inset: 0;
+}
+
+/* Nothing in the sheet may hand a vertical gesture to the browser. The instant
+   it's claimed as a page pan — toolbar hide/show, rubber-band,
+   pull-to-refresh — the browser cancels our pointer stream and the drag dies,
+   which on a phone left the handle (the one element already set to `none`) as
+   the only place the sheet could be grabbed.
+
+   These have to be per-child: touch-action on an ancestor also constrains its
+   descendants, so putting `none` on the sheet root would immobilise the
+   scrollable regions inside it. The exceptions below re-permit exactly the
+   axis each scroller needs. */
+[data-sheet-root] > * {
+  touch-action: none;
+}
+[data-sheet-root] > [data-sheet-scroll] {
+  touch-action: manipulation;
+}
+[data-sheet-root] > [data-noscroll] {
+  touch-action: pan-x;
 }
 
 /* Scrollable regions inside a bottom sheet. `contain` keeps a flick that runs
