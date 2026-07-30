@@ -13,10 +13,30 @@ html, body {
   background: #eceae6;
   font-family: -apple-system, 'SF Pro Text', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* This is a full-screen app shell: the document itself must never scroll or
+     rubber-band. Without this, dragging the bottom sheet (or an auto-scroll
+     inside it) ends up panning the whole page / triggering pull-to-refresh. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
+/* Pinned to the viewport rather than sized off <html>, so the app can't end up
+   taller than the visible area on mobile when the browser chrome collapses. */
 #root {
-  height: 100%;
+  position: fixed;
+  inset: 0;
+}
+
+/* Scrollable regions inside a bottom sheet. `contain` keeps a flick that runs
+   out of content from chaining outward to the page. */
+[data-sheet-scroll] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Both axes, not just pan-y: touch-action intersects down the ancestor
+     chain, and restricting this region to the vertical axis would leave the
+     horizontal arrival strips nested inside it unable to pan at all. */
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
 }
 
 a { color: #0039A6; }
@@ -24,9 +44,14 @@ a:hover { color: #00287a; }
 
 button { font-family: inherit; }
 
+/* Horizontal strips (station picker, arrivals rows): scrollbar hidden, and
+   pinned to the horizontal axis so a vertical swipe across one still drags the
+   sheet rather than being swallowed as an ambiguous scroll. */
 [data-noscroll] {
   scrollbar-width: none;
   -ms-overflow-style: none;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 [data-noscroll]::-webkit-scrollbar {
   display: none;

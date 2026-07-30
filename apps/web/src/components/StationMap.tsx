@@ -3,6 +3,7 @@ import { Circle, GeoJSON, MapContainer, Marker, Polyline, TileLayer, Tooltip, us
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useLineShapes } from '../hooks/useLineShapes';
+import { SHEET_SETTLE_EASING, SHEET_SETTLE_MS } from './BottomSheet';
 import { LINE_COLORS } from '../lines';
 import type { NearbyStation } from '../types';
 import type { LatLngTuple } from '../routeGeometry';
@@ -21,6 +22,14 @@ const STATION_RADIUS_FOCUSED_M = 18;
 // map itself buttery (throttling is on the callback, not the pan/zoom) while
 // visibly slowing how often the rest of the UI reacts.
 const DOT_LOCATION_THROTTLE_MS = 150;
+// The dot's on-screen position and the map pan that cancels it out both have to
+// run against the bottom sheet's own settle animation, or the dot drifts across
+// the map for a fifth of a second every time the sheet snaps.
+const DOT_SETTLE_SEC = SHEET_SETTLE_MS / 1000;
+const RECENTER_FLY_SEC = 0.6;
+// After a recenter tap, a sheet resize within this window re-aims at the rider
+// instead of holding the old view — the tap and the resize are one intent.
+const RECENTER_GRACE_MS = 900;
 const LINE_SHAPE_WEIGHT = 3;
 const LINE_SHAPE_OPACITY = 0.75;
 const LINE_SHAPE_FALLBACK_COLOR = '#888';
@@ -75,17 +84,26 @@ function dotLatLng(map: L.Map, upByPx: number): L.LatLng {
  * can do it once per gesture instead of on every intermediate frame. */
 function TrackDotLocation({
   dotOffsetPx,
+  settlingRef,
   onChange,
   onSettle,
 }: {
   dotOffsetPx: number;
+  /** Timestamp until which the map is compensating for a sheet resize. */
+  settlingRef: React.RefObject<number>;
   onChange: (loc: { lat: number; lon: number }) => void;
   onSettle?: (loc: { lat: number; lon: number }) => void;
 }) {
   const lastEmitRef = useRef(0);
   const map = useMapEvents({
     move: () => {
+      // A compensating pan ends with the dot on exactly the coordinate it
+      // started on, but its intermediate frames don't — dotOffsetPx has already
+      // jumped to its new value while the map is still catching up. Reporting
+      // those would flip the nearest station, which resizes the sheet, which
+      // moves the dot again. The moveend below reports the settled truth.
       const now = performance.now();
+      if (now < settlingRef.current) return;
       if (now - lastEmitRef.current < DOT_LOCATION_THROTTLE_MS) return;
       lastEmitRef.current = now;
       const { lat, lng } = dotLatLng(map, dotOffsetPx);
@@ -104,27 +122,105 @@ function TrackDotLocation({
 }
 
 /**
- * Keeps flying to the rider's location as new fixes arrive, until they touch
- * the map themselves. A first GPS fix is often a coarse network/cell
- * position that lands well before the chip actually locks on — how long
- * that takes varies a lot (worse in dense areas like downtown Brooklyn), so
- * rather than guess a timeout for "good enough," this just keeps correcting
- * itself for as long as the rider hasn't taken over. `dragstart` (real user
- * panning, not our own programmatic flyTo — flyTo never fires it) is what
- * hands over control.
+ * Two jobs, both about keeping the blue dot honest:
+ *
+ * 1. Keep flying to the rider's location as new fixes arrive, until they touch
+ *    the map themselves. A first GPS fix is often a coarse network/cell
+ *    position that lands well before the chip actually locks on — how long
+ *    that takes varies a lot (worse in dense areas like downtown Brooklyn), so
+ *    rather than guess a timeout for "good enough," this just keeps correcting
+ *    itself for as long as the rider hasn't taken over. `dragstart` (real user
+ *    panning, not our own programmatic flyTo — flyTo never fires it) is what
+ *    hands over control.
+ *
+ * 2. Compensate whenever the bottom sheet resizes. The dot is centred in the
+ *    *unobstructed* part of the map (see CenterUserDot), so a taller or shorter
+ *    sheet moves it vertically on screen — and since the dot is what marks the
+ *    rider's position, that silently re-points it at a different block.
+ *    Re-aiming the map over the same duration the sheet animates keeps the
+ *    coordinate underneath the dot fixed: collapsing the sheet reveals more
+ *    map instead of moving the rider.
  */
-function FollowLocationUntilInteraction({ lat, lon, dotOffsetPx }: { lat: number; lon: number; dotOffsetPx: number }) {
+function AnchorUserDot({
+  lat,
+  lon,
+  dotOffsetPx,
+  settlingRef,
+  recenterRef,
+}: {
+  lat: number;
+  lon: number;
+  dotOffsetPx: number;
+  /** Shared with TrackDotLocation, which must ignore this animation's frames. */
+  settlingRef: React.RefObject<number>;
+  /** Filled in here so the recenter button flies via the same code that owns
+   * the dot offset, instead of racing it with a second animation. */
+  recenterRef: React.RefObject<(() => void) | null>;
+}) {
   const interactedRef = useRef(false);
+  const offsetRef = useRef(dotOffsetPx);
+  // Window after a recenter tap during which a sheet resize re-aims at the
+  // rider rather than preserving the old view. Tapping recenter drops the sheet
+  // (see onRecenter), and the point of that tap is the rider's position, not
+  // whatever the dot happened to be over beforehand.
+  const recenterUntilRef = useRef(0);
+  // Whatever coordinate the dot was sitting on when the current run of resizes
+  // began. Re-aiming at a fixed anchor (rather than nudging by each delta) is
+  // what keeps this exact when heights change in quick succession — Leaflet
+  // drops the unfinished part of a pan it interrupts, so deltas would quietly
+  // lose pixels every time.
+  const anchorRef = useRef<L.LatLng | null>(null);
   const map = useMapEvents({
     dragstart: () => {
       interactedRef.current = true;
     },
+    moveend: () => {
+      settlingRef.current = 0;
+    },
   });
+
+  const aimAtRider = (offset: number, durationSec: number) => {
+    settlingRef.current = performance.now() + durationSec * 1000 + 120;
+    map.flyTo(offsetCenterLatLng(map, lat, lon, RECENTER_ZOOM, offset), RECENTER_ZOOM, { duration: durationSec });
+  };
+
+  recenterRef.current = () => {
+    recenterUntilRef.current = performance.now() + RECENTER_GRACE_MS;
+    aimAtRider(dotOffsetPx, RECENTER_FLY_SEC);
+  };
 
   useEffect(() => {
     if (interactedRef.current) return;
-    const target = offsetCenterLatLng(map, lat, lon, RECENTER_ZOOM, dotOffsetPx);
-    map.flyTo(target, RECENTER_ZOOM, { duration: 0.6 });
+    const target = offsetCenterLatLng(map, lat, lon, RECENTER_ZOOM, offsetRef.current);
+    map.flyTo(target, RECENTER_ZOOM, { duration: RECENTER_FLY_SEC });
+    // Deliberately not reactive to dotOffsetPx — a sheet resize is handled by
+    // the pan below, which re-aims at wherever the dot already points.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, lat, lon]);
+
+  useEffect(() => {
+    const previousOffset = offsetRef.current;
+    offsetRef.current = dotOffsetPx;
+    if (previousOffset === dotOffsetPx) return;
+    // Auto-follow still owns the view, so re-aim at the rider's own coordinate.
+    // Reading the current one instead would be unreliable here: the follow
+    // flyTo is often still in flight, and mid-animation getCenter() reports
+    // wherever the map happens to be passing through.
+    // A deadline rather than a flag: moveend clears it, but if a pan ever ends
+    // without one the suppression expires on its own instead of sticking.
+    const settling = performance.now() < settlingRef.current;
+    if (!interactedRef.current || performance.now() < recenterUntilRef.current) {
+      aimAtRider(dotOffsetPx, DOT_SETTLE_SEC);
+      return;
+    }
+    settlingRef.current = performance.now() + SHEET_SETTLE_MS + 120;
+    if (!settling) anchorRef.current = dotLatLng(map, previousOffset);
+    const anchor = anchorRef.current!;
+    map.panTo(offsetCenterLatLng(map, anchor.lat, anchor.lng, map.getZoom(), dotOffsetPx), {
+      animate: true,
+      duration: DOT_SETTLE_SEC,
+      easeLinearity: 0.4,
+    });
   }, [map, lat, lon, dotOffsetPx]);
 
   return null;
@@ -132,9 +228,10 @@ function FollowLocationUntilInteraction({ lat, lon, dotOffsetPx }: { lat: number
 
 /** Pans the map back to the rider's real coordinates on demand — needed because
  * the blue dot itself is pinned to the viewport (see CenterUserDot) rather
- * than tracking the user's real position as the map is panned. */
-function RecenterButton({ lat, lon, dotOffsetPx }: { lat: number; lon: number; dotOffsetPx: number }) {
-  const map = useMap();
+ * than tracking the user's real position as the map is panned. The flight
+ * itself belongs to AnchorUserDot; this only asks for it, so the two can't
+ * animate the map toward different places at once. */
+function RecenterButton({ onPress }: { onPress: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -149,10 +246,7 @@ function RecenterButton({ lat, lon, dotOffsetPx }: { lat: number; lon: number; d
   return (
     <button
       ref={ref}
-      onClick={() => {
-        const target = offsetCenterLatLng(map, lat, lon, RECENTER_ZOOM, dotOffsetPx);
-        map.flyTo(target, RECENTER_ZOOM, { duration: 0.6 });
-      }}
+      onClick={onPress}
       aria-label="Recenter on my location"
       style={{
         position: 'absolute',
@@ -196,6 +290,9 @@ function CenterUserDot({ obstructedBottomPx }: { obstructedBottomPx: number }) {
         transform: 'translate(-50%, -50%)',
         zIndex: 500,
         pointerEvents: 'none',
+        // Matches the sheet's settle so the dot and the compensating map pan
+        // (AnchorUserDot) travel together — the world under the dot holds still.
+        transition: `top ${SHEET_SETTLE_MS}ms ${SHEET_SETTLE_EASING}`,
       }}
     >
       <div
@@ -277,6 +374,7 @@ export function StationMap({
   obstructedBottomPx = 0,
   onDotLocationChange,
   onDotLocationSettled,
+  onRecenter,
   routes,
   routeStops,
   trainMarker,
@@ -292,6 +390,10 @@ export function StationMap({
   onDotLocationChange?: (loc: { lat: number; lon: number }) => void;
   /** Called once a pan/fly settles (moveend), not on every intermediate frame — for callers that need to re-fetch rather than just re-sort. */
   onDotLocationSettled?: (loc: { lat: number; lon: number }) => void;
+  /** Fires when the rider taps "recenter", before the map flies — the point of
+   * that tap is to see the map, so callers should get their bottom sheet out of
+   * the way. The flight itself re-aims at whatever height the sheet ends on. */
+  onRecenter?: () => void;
   /** One highlighted path per journey leg drawn so far, heavier and brighter than the base network overlay. */
   routes?: RouteHighlight[];
   /** Stops along the highlighted route(s), styled by whether the train has passed, is at, or hasn't reached them yet. */
@@ -302,6 +404,10 @@ export function StationMap({
   fitBounds?: { points: LatLngTuple[]; key: string };
 }) {
   const dotOffsetPx = obstructedBottomPx / 2;
+  // Deadline until which the map is animating to absorb a bottom-sheet resize.
+  // Shared because the dot's location tracker has to sit that animation out.
+  const settlingRef = useRef(0);
+  const recenterRef = useRef<(() => void) | null>(null);
   const lineShapes = useLineShapes();
   const initialCenter: LatLngTuple = userLocation
     ? [userLocation.lat, userLocation.lon]
@@ -322,11 +428,25 @@ export function StationMap({
         {lineShapes && <GeoJSON data={lineShapes} style={lineShapeStyle} />}
         {userLocation && (
           <>
-            <FollowLocationUntilInteraction lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
-            <RecenterButton lat={userLocation.lat} lon={userLocation.lon} dotOffsetPx={dotOffsetPx} />
+            <AnchorUserDot
+              lat={userLocation.lat}
+              lon={userLocation.lon}
+              dotOffsetPx={dotOffsetPx}
+              settlingRef={settlingRef}
+              recenterRef={recenterRef}
+            />
+            <RecenterButton
+              onPress={() => {
+                // Sheet first: the resize it triggers lands inside the recenter
+                // grace window, so the flight aims at the final layout.
+                onRecenter?.();
+                recenterRef.current?.();
+              }}
+            />
             {(onDotLocationChange || onDotLocationSettled) && (
               <TrackDotLocation
                 dotOffsetPx={dotOffsetPx}
+                settlingRef={settlingRef}
                 onChange={onDotLocationChange ?? (() => {})}
                 onSettle={onDotLocationSettled}
               />

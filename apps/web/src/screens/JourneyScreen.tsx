@@ -262,7 +262,7 @@ export function JourneyScreen({
         <div
           data-sheet-scroll
           onScroll={onListScroll}
-          style={{ flex: 1, minHeight: 0, overflow: 'auto', WebkitOverflowScrolling: 'touch', borderTop: '1px solid #eee' }}
+          style={{ flex: 1, minHeight: 0, borderTop: '1px solid #eee' }}
         >
           <div style={{ padding: `16px 16px ${SHEET_BOTTOM_SAFE_PADDING}` }}>
             {stops.map((sp, i) => {

@@ -35,6 +35,13 @@ const FEED_URL: Record<string, string> = {
  */
 const ALL_LINES = Object.keys(FEED_GROUP_FOR_ROUTE);
 
+/** Upcoming arrivals kept per station/line/direction. Only ever future ones — see prune(). */
+const MAX_ARRIVALS_PER_KEY = 8;
+/** How long a departed arrival is kept before pruning, absorbing clock skew between the feed and us. */
+const DEPARTED_ARRIVAL_GRACE_MS = 60_000;
+/** How long a finished trip stays resolvable, so a rider still on its screen doesn't lose it the instant it terminates. */
+const FINISHED_TRIP_GRACE_MS = 10 * 60_000;
+
 interface DecodedArrival {
   tripId: string;
   line: string;
@@ -97,8 +104,37 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
     }
   }
 
+  /**
+   * Drops departed trains from both indexes.
+   *
+   * This is load-bearing, not housekeeping. A trip update only ever carries a
+   * trip's *remaining* stops, so the moment a train passes a station that stop
+   * disappears from the feed — and since `ingest` only replaces an entry when
+   * the same tripId turns up again, nothing would ever evict it. Stale
+   * arrivals sort earliest, so they'd take every slot under the
+   * MAX_ARRIVALS_PER_KEY cap, and each index read filters to times still
+   * ahead: the buckets would go permanently empty and every line would report
+   * "no upcoming trains" the longer the instance stayed warm.
+   */
+  private prune(): void {
+    const arrivalCutoff = Date.now() - DEPARTED_ARRIVAL_GRACE_MS;
+    for (const [key, arrivals] of this.arrivalsIndex) {
+      const upcoming = arrivals.filter((a) => a.arrivalMs >= arrivalCutoff);
+      if (upcoming.length === arrivals.length) continue;
+      if (upcoming.length === 0) this.arrivalsIndex.delete(key);
+      else this.arrivalsIndex.set(key, upcoming);
+    }
+    // A trip is over once its final stop is behind us. The grace keeps a
+    // just-finished trip resolvable for a rider still looking at it.
+    const tripCutoff = Date.now() - FINISHED_TRIP_GRACE_MS;
+    for (const [tripId, seq] of this.tripIndex) {
+      if (seq[seq.length - 1].arrivalMs < tripCutoff) this.tripIndex.delete(tripId);
+    }
+  }
+
   /** Fetch + decode the given feed groups and merge their trip updates into the indexes. Returns error messages for any that failed. */
   private async refresh(groups: string[]): Promise<string[]> {
+    this.prune();
     const results = await Promise.allSettled(groups.map((g) => this.fetchGroup(g)));
     return results
       .map((r, i) => (r.status === 'rejected' ? `${groups[i]}: ${r.reason?.message ?? r.reason}` : null))
@@ -115,6 +151,7 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
   }
 
   private ingest(feed: transit_realtime.FeedMessage): void {
+    const arrivalCutoff = Date.now() - DEPARTED_ARRIVAL_GRACE_MS;
     for (const entity of feed.entity) {
       const tu = entity.tripUpdate;
       if (!tu || !tu.trip) continue;
@@ -142,6 +179,9 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
         const stop = seq[i];
         const stationId = this.stationByGtfsId.get(baseStopId(stop.gtfsStopId));
         if (!stationId) continue;
+        // A feed's trip can still list a stop it's just called at; every read
+        // of this index wants times ahead, so it would only burn a slot.
+        if (stop.arrivalMs < arrivalCutoff) continue;
         const nextStop = seq[i + 1];
         const nextStationId = nextStop ? this.stationByGtfsId.get(baseStopId(nextStop.gtfsStopId)) ?? null : null;
         const key = `${stationId}:${stop.line}:${stop.direction}`;
@@ -154,10 +194,10 @@ export class MtaGtfsRealtimeProvider implements RealtimeProvider {
           nextStationId,
         };
         const existing = this.arrivalsIndex.get(key) ?? [];
-        const dedup = existing.filter((a) => a.tripId !== arrival.tripId);
+        const dedup = existing.filter((a) => a.tripId !== arrival.tripId && a.arrivalMs >= arrivalCutoff);
         dedup.push(arrival);
         dedup.sort((a, b) => a.arrivalMs - b.arrivalMs);
-        this.arrivalsIndex.set(key, dedup.slice(0, 8));
+        this.arrivalsIndex.set(key, dedup.slice(0, MAX_ARRIVALS_PER_KEY));
       }
     }
   }

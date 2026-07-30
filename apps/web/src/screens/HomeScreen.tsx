@@ -12,11 +12,10 @@ import { BottomSheet, SHEET_HANDLE_HEIGHT_PX } from '../components/BottomSheet';
 import { pickDirectionLabels } from '../directionLabels';
 import type { ActiveTrip, Direction, JourneyLeg, NearbyStation, StationAnchor } from '../types';
 
-// Ceiling on the expanded snap point — it normally hugs the actual arrivals
-// content (see contentHeightPx below), but a station with many lines is
-// capped here so the sheet never swallows the whole map.
-const EXPANDED_SHEET_VH_FRACTION = 0.6;
-const EXPANDED_SHEET_MAX_PX = 520;
+// Strip of map left showing above the expanded sheet, enough to clear the
+// recenter button and the station-select back button. Only a station with more
+// lines than fit under this gets truncated, and then it scrolls internally.
+const FULL_SHEET_TOP_GAP_PX = 76;
 const SHEET_BOTTOM_SAFE_PADDING = 'max(16px, env(safe-area-inset-bottom))';
 
 export function HomeScreen({
@@ -51,17 +50,20 @@ export function HomeScreen({
   const [dotLocation, setDotLocation] = useState<{ lat: number; lon: number } | null>(
     anchor ? { lat: anchor.lat, lon: anchor.lon } : null,
   );
-  const sortLocation = dotLocation ?? (geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null);
-
-  // Distinct from `dotLocation`: updates only once a pan/fly *settles*
-  // (StationMap's onDotLocationSettled, i.e. moveend), not on every
-  // intermediate drag frame. This is what the server-capped "nearby" set is
-  // actually fetched around, so moving the pin refetches which stations show
-  // up — not just re-sorting whatever was already loaded — without spamming
-  // the API mid-gesture. Falls back to sortLocation before the first
-  // settle (e.g. the very first geo fix, before any pan has happened).
+  // Updates only once a pan/fly *settles* (StationMap's onDotLocationSettled,
+  // i.e. moveend), not on every intermediate drag frame.
   const [fetchLocation, setFetchLocation] = useState<{ lat: number; lon: number } | null>(null);
-  const effectiveFetchLocation = fetchLocation ?? sortLocation;
+
+  // Everything downstream of "where am I pointing" — which station is focused,
+  // which arrivals are shown, and therefore how tall the sheet is — keys off
+  // the settled position rather than the live one. Mid-drag it would flicker
+  // between neighbouring stations, and because the expanded sheet is sized to
+  // fit the focused station, that flicker would resize the sheet (and so move
+  // the dot, and so change which station is nearest) under the rider's finger.
+  // `dotLocation` still covers the window before the first settle.
+  const sortLocation =
+    fetchLocation ?? dotLocation ?? (geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null);
+  const effectiveFetchLocation = sortLocation;
   const fetchLocationKey = effectiveFetchLocation
     ? `${effectiveFetchLocation.lat.toFixed(4)},${effectiveFetchLocation.lon.toFixed(4)}`
     : 'none';
@@ -88,7 +90,13 @@ export function HomeScreen({
   // In anchor mode the anchor station is the default focus even before nearby
   // data loads, since we know exactly which station the rider wants to see.
   const defaultFocusId = anchor?.stationId ?? null;
-  const activeFocusId = focusedStationId ?? defaultFocusId ?? stations[0]?.id ?? null;
+  // A tapped station stays focused only while it's still one of the nearby
+  // ones. Panning to a new area returns a completely disjoint set, and holding
+  // onto an id that isn't in it leaves the sheet focused on nothing.
+  const activeFocusId =
+    [focusedStationId, defaultFocusId].find((id) => id && stations.some((s) => s.id === id)) ??
+    stations[0]?.id ??
+    null;
   const focused = stations.find((s) => s.id === activeFocusId) ?? null;
   const { toggle: toggleLabels } = pickDirectionLabels(focused?.lines ?? []);
 
@@ -143,16 +151,30 @@ export function HomeScreen({
     };
   }, [focused]);
 
+  // Expanded always means "fits this station's arrivals" — it's derived from
+  // the focused station's content, so it re-sizes itself whenever the focus
+  // changes, whether that came from a tap or from panning the map.
   const collapsedHeight = SHEET_HANDLE_HEIGHT_PX + stripHeightPx;
-  const naturalExpandedHeight = SHEET_HANDLE_HEIGHT_PX + contentHeightPx + stripHeightPx;
+  // With nothing focused there's nothing to expand to. The measurement clone
+  // unmounts along with the arrivals, so contentHeightPx would otherwise still
+  // be describing whichever station was showing last.
+  const naturalExpandedHeight = SHEET_HANDLE_HEIGHT_PX + (focused ? contentHeightPx : 0) + stripHeightPx;
   const expandedHeight = Math.max(
     collapsedHeight,
-    Math.min(naturalExpandedHeight, viewportHeight * EXPANDED_SHEET_VH_FRACTION, EXPANDED_SHEET_MAX_PX),
+    Math.min(naturalExpandedHeight, viewportHeight - FULL_SHEET_TOP_GAP_PX),
   );
   const snapPoints = [collapsedHeight, expandedHeight];
   const [activeSnap, setActiveSnap] = useState(1);
   const [sheetHeightPx, setSheetHeightPx] = useState(expandedHeight);
   const expanded = activeSnap === 1;
+
+  // Picking a station is a request to read its arrivals, so the sheet opens to
+  // fit them. Panning the map only re-points the sheet at whatever is nearest
+  // now — a minimised sheet stays minimised.
+  const focusStation = (id: string) => {
+    onFocusStation(id);
+    setActiveSnap(1);
+  };
 
   const arrivalsContent = focused && (
     <>
@@ -234,11 +256,13 @@ export function HomeScreen({
       <StationMap
         stations={stations}
         focusedId={activeFocusId}
-        onFocusStation={onFocusStation}
+        onFocusStation={focusStation}
         userLocation={geo.lat !== null && geo.lon !== null ? { lat: geo.lat, lon: geo.lon } : null}
         obstructedBottomPx={sheetHeightPx}
         onDotLocationChange={setDotLocation}
         onDotLocationSettled={setFetchLocation}
+        // Recentring is a request to look at the map, so get the sheet off it.
+        onRecenter={() => setActiveSnap(0)}
         routes={previousRoutes.length > 0 ? previousRoutes : undefined}
       />
 
@@ -269,7 +293,7 @@ export function HomeScreen({
         style={{ background: '#fff', borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 24px rgba(0,0,0,0.14)' }}
       >
         {expanded && focused && (
-          <div data-sheet-scroll style={{ padding: '2px 18px 12px', flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div data-sheet-scroll style={{ padding: '2px 18px 12px', flex: 1, minHeight: 0 }}>
             {arrivalsContent}
           </div>
         )}
@@ -282,7 +306,19 @@ export function HomeScreen({
           <div
             ref={contentMeasureRef}
             aria-hidden
-            style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', width: '100%', padding: '2px 18px 12px' }}
+            style={{
+              position: 'absolute',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+              // left/right rather than width:100% — with the default
+              // content-box sizing, width:100% plus this padding lays the clone
+              // out 36px wider than the real thing, so long station names wrap
+              // to fewer lines here than they do on screen and the sheet ends
+              // up measured a row short.
+              left: 0,
+              right: 0,
+              padding: '2px 18px 12px',
+            }}
           >
             {arrivalsContent}
           </div>
@@ -290,17 +326,22 @@ export function HomeScreen({
 
         <div
           ref={stripRef}
+          data-noscroll
           style={{
             display: 'flex', gap: 10, overflowX: 'auto',
             padding: `10px 16px ${SHEET_BOTTOM_SAFE_PADDING}`,
             borderTop: expanded ? '1px solid #eee' : 'none',
             flexShrink: 0,
+            // Held to the bottom of the sheet whatever else is mounted above
+            // it — without this the strip floats up to meet the handle any
+            // time the arrivals aren't rendered.
+            marginTop: 'auto',
           }}
         >
           {stations.map((st) => (
             <button
               key={st.id}
-              onClick={() => onFocusStation(st.id)}
+              onClick={() => focusStation(st.id)}
               style={{
                 flexShrink: 0, minWidth: 150, padding: 12, borderRadius: 14, background: '#f5f5f7', textAlign: 'left', cursor: 'pointer',
                 border: `2px solid ${st.id === activeFocusId ? '#0039A6' : 'transparent'}`,
@@ -335,3 +376,4 @@ const backBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   paddingBottom: 1,
 };
+

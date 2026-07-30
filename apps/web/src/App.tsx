@@ -60,7 +60,7 @@ export default function App() {
   const previousLegs = legs.length > 1 ? legs.slice(0, -1) : [];
 
   return (
-    <div style={{ position: 'relative', height: '100dvh', width: '100%', overflow: 'hidden', background: '#fff' }}>
+    <div style={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden', background: '#fff' }}>
       {legs.length === 0 && (
         <HomeScreen
           direction={homeDirection}
