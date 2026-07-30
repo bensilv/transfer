@@ -20,6 +20,10 @@ import type { RouteHighlight } from '../components/StationMap';
 const DEFAULT_SHEET_VH_FRACTION = 0.56;
 const DEFAULT_SHEET_MAX_PX = 520;
 const FULL_SHEET_TOP_GAP_PX = 10;
+// Floor on the peek snap. It sits flush against the bottom of the screen,
+// where a phone's home-indicator gesture area competes for the same pixels, so
+// handle-plus-status-row alone leaves too little to reliably grab.
+const MIN_PEEK_HEIGHT_PX = 96;
 const SHEET_BOTTOM_SAFE_PADDING = 'max(20px, env(safe-area-inset-bottom))';
 // How long a manual scroll in the stop list suppresses auto-scroll-to-active,
 // and how long we ignore scroll events right after we trigger one ourselves
@@ -121,12 +125,18 @@ export function JourneyScreen({
   ];
 
   // --- Floating top bar + sheet sizing ---
+  // Both of these read getBoundingClientRect (border-box) rather than
+  // entry.contentRect (content-box, padding excluded) — these elements are
+  // padded, and the snap points below are stacking them against siblings, so
+  // what matters is the space they actually occupy. Measuring the content box
+  // made the peek snap 10px shorter than its own status row, which the sheet
+  // then clipped.
   const topBarRef = useRef<HTMLDivElement>(null);
   const [topBarHeight, setTopBarHeight] = useState(64);
   useLayoutEffect(() => {
     const el = topBarRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setTopBarHeight(entry.contentRect.height));
+    const observer = new ResizeObserver(() => setTopBarHeight(el.getBoundingClientRect().height));
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -136,12 +146,12 @@ export function JourneyScreen({
   useLayoutEffect(() => {
     const el = statusRowRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setStatusRowHeight(entry.contentRect.height));
+    const observer = new ResizeObserver(() => setStatusRowHeight(el.getBoundingClientRect().height));
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
-  const peekHeight = SHEET_HANDLE_HEIGHT_PX + statusRowHeight;
+  const peekHeight = Math.max(MIN_PEEK_HEIGHT_PX, SHEET_HANDLE_HEIGHT_PX + statusRowHeight);
   const fullHeight = Math.max(peekHeight + 80, viewportHeight - topBarHeight - FULL_SHEET_TOP_GAP_PX);
   const defaultHeight = Math.max(
     peekHeight + 40,

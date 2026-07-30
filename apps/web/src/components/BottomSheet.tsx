@@ -236,13 +236,20 @@ export function BottomSheet({
         drag.decided = 'scrolling';
         return;
       }
-      // Inside scrollable content the sheet only takes the gesture when that
-      // content can't consume it: pulling down while already at the top.
-      // Anywhere else in the sheet — the handle, headers, toggles, the station
-      // strip — every vertical drag moves the sheet.
+      // Inside scrollable content the sheet takes the gesture only from the
+      // content's top edge: pulling down from there shrinks the sheet, and
+      // pushing up from there grows it while a taller snap point is still
+      // available — so the sheet opens fully before its contents start
+      // scrolling, rather than the gesture being swallowed by a list that
+      // takes up most of the sheet. Once the content is scrolled, or there's
+      // nothing taller to grow into, it's an ordinary scroll. Anywhere else in
+      // the sheet — the handle, headers, toggles, the station strip — every
+      // vertical drag moves the sheet.
       const scrollEl = drag.scrollEl;
       const canScroll = !!scrollEl && scrollEl.scrollHeight - scrollEl.clientHeight > 1;
-      if (canScroll && !(dy > 0 && scrollEl.scrollTop <= 0)) {
+      const atTopOfContent = !!scrollEl && scrollEl.scrollTop <= 0;
+      const growsSheet = dy < 0 && activeSnap < maxIndex;
+      if (canScroll && !(atTopOfContent && (dy > 0 || growsSheet))) {
         drag.decided = 'scrolling';
         return;
       }
